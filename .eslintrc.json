@@ -1,0 +1,12 @@
+// {
+//   "extends": [
+//     "next/core-web-vitals",
+//     "next/typescript"
+//     //"plugin:@typescript-eslint/recommended",
+//     //"eslint:recommended",
+//     // "prettier"
+//   ],
+//   "rules": {
+//     "react/react-in-jsx-scope": "off"
+//   }
+// }

@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Board {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shapes    Shape[]
+}
+
+model Shape {
+  id        String   @id @default(cuid())
+  type      String
+  x         Float?
+  y         Float?
+  width     Float?
+  height    Float?
+  cx        Float?
+  cy        Float?
+  r         Float?
+  content   String?
+  fontSize     Int?
+  fill         String?
+  stroke       String?    
+  strokeWidth  Float?     
+  board     Board    @relation(fields: [boardId], references: [id])
+  boardId   String
+  createdAt DateTime @default(now())
+}
+
