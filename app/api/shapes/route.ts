@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/shapes
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -67,7 +68,14 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    console.log("DATA DITERIMA:", { boardId, shape });
+
+    console.log("📌 boardId:", boardId);
+    console.log("📦 shape received:", JSON.stringify(shape, null, 2));
+
+    for (const [key, value] of Object.entries(shape)) {
+      console.log(`  ${key}:`, value, `(${typeof value})`);
+    }
+
     const newShape = await prisma.shape.create({
       data: {
         id: shape.id,
@@ -80,17 +88,51 @@ export async function POST(req: NextRequest) {
         cy: shape.cy ?? null,
         r: shape.r ?? null,
         content: shape.content ?? null,
-        fontSize: shape.fontSize ?? null,
+        fontSize: shape.fontSize ? parseInt(shape.fontSize.toString()) : null,
         fill: shape.fill ?? null,
+        stroke: shape.stroke ?? null,
+        strokeWidth: shape.strokeWidth ?? null,
         boardId,
       },
     });
 
+    console.log("✅ Shape berhasil disimpan di DB:", newShape);
     return NextResponse.json(newShape, { status: 201 });
-  } catch (error) {
-    console.error(error);
+  } catch (error: unknown) {
+    console.error("❌ POST /api/shapes error:", error);
+    if (error instanceof Error) {
+      console.error("🧯 Detailed error stack:", error.stack);
+    }
+
     return NextResponse.json(
-      { error: "Failed to create shape." },
+      {
+        error: "Failed to create shape",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
+}
+// Tambahkan di bawah POST dan GET yang sudah ada
+
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "Missing shape id" }, { status: 400 });
+  }
+
+  try {
+    await prisma.shape.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ message: "Shape deleted" }, { status: 200 });
+  } catch (error) {
+    console.error("Error deleting shape:", error);
+    return NextResponse.json(
+      { error: "Failed to delete shape" },
       { status: 500 }
     );
   }

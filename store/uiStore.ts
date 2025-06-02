@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type Tool = "select" | "rectangle" | "circle" | "text" | null;
+export type Tool = "select" | "move" | "rectangle" | "circle" | "text";
 
 interface UIState {
   activeTool: Tool;
@@ -8,7 +8,7 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  activeTool: null,
+  activeTool: "select",
   setActiveTool: (tool) => set({ activeTool: tool }),
   // setSelectedTool: (tool: ToolType) => set({ selectedTool: tool }),
 }));
