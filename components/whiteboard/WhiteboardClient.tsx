@@ -1,3 +1,4 @@
+// components/whiteboard/elements/whiteboardclient.tsx
 "use client";
 
 import { useState } from "react";
@@ -5,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Whiteboard as WhiteboardType } from "@/types/database";
 import { LoginModal } from "@/components/login/LoginModal";
 
-export default function BoardListPageClient({
+export default function WhiteboardClient({
   boards: initialBoards,
 }: {
   boards: WhiteboardType[];
@@ -44,7 +45,7 @@ export default function BoardListPageClient({
 
       const data = await res.json();
       if (data?.id) {
-        setBoards((prev) => [data, ...prev]); // tambahkan ke atas list
+        setBoards((prev) => [data, ...prev]);
         setNewBoardTitle("");
       }
     } catch (err) {
@@ -53,30 +54,28 @@ export default function BoardListPageClient({
   };
 
   return (
-    <div>
-      {/* Form buat board */}
+    <div className="bg-white p-6 rounded-lg shadow-md">
       <div className="flex gap-2 mb-4">
         <input
           value={newBoardTitle}
           onChange={(e) => setNewBoardTitle(e.target.value)}
           placeholder="Masukkan judul board..."
-          className="border border-gray-300 px-3 py-2 rounded-md text-sm w-full"
+          className="border border-gray-300 px-4 py-2 rounded-md text-sm w-full"
         />
         <button
           onClick={createBoard}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md text-sm font-medium"
         >
-          Buat Board
+          Buat
         </button>
       </div>
 
-      {/* List board */}
       <ul className="space-y-2">
         {boards.map((board) => (
           <li key={board.id}>
             <button
               onClick={() => handleClickBoard(board.id)}
-              className="text-blue-600 hover:underline"
+              className="text-blue-600 hover:underline text-base"
             >
               {board.title}
             </button>
@@ -84,7 +83,6 @@ export default function BoardListPageClient({
         ))}
       </ul>
 
-      {/* Modal login muncul hanya setelah klik board */}
       <LoginModal isOpen={isModalOpen} onLogin={handleLogin} />
     </div>
   );

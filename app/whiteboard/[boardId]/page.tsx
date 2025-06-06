@@ -1,71 +1,4 @@
-// // app/whiteboard/[boardId]/page.tsx
-
-// import { PrismaClient } from "@prisma/client";
-// import { notFound } from "next/navigation";
-// import Canvas from "@/components/whiteboard/Canvas";
-// import Toolbar from "@/components/whiteboard/Toolbar";
-// // import WhiteboardClient from "@/components/whiteboard/WhiteboardClient";
-
-// interface WhiteboardPageProps {
-//   params: {
-//     boardId: string;
-//   };
-// }
-
-// // Use a singleton pattern for PrismaClient to avoid too many connections in development
-// const globalForPrisma = global as unknown as { prisma: PrismaClient };
-
-// const prisma = globalForPrisma.prisma || new PrismaClient();
-
-// if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-
-// export default async function WhiteboardPage({ params }: WhiteboardPageProps) {
-//   const { boardId } = params;
-
-//   // Debug: cek apakah boardId diterima
-//   console.log("boardId:", boardId);
-
-//   // Cari board berdasarkan ID dari database
-//   const board = await prisma.board.findUnique({
-//     where: { id: boardId },
-//   });
-
-//   // Jika tidak ada data, redirect ke halaman 404
-//   if (!board) {
-//     notFound();
-//   }
-
-//   // Render halaman whiteboard dengan data board dan Canvas
-//   return (
-//     <>
-//       <div className="flex flex-col h-screen">
-//         <Toolbar />
-//         <div className="flex flex-1">
-//           {/* Sidebar kiri */}
-//           <aside className="w-64 bg-gray-100 p-4 border-r">
-//             <h2>{board.title}</h2>
-//             {/* <p>ID: {board.id}</p> */}
-//           </aside>
-//           {/* Area Canvas */}
-//           <main className="flex-1 bg-white relative">
-//             <Canvas boardId={board.id} />
-//             {/* <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-//               Canvas goes here...
-//             </div> */}
-//           </main>
-
-//           {/* Toolbar kanan */}
-//           {/* <aside className="w-16 bg-gray-50 border-l p-2">
-//             <div className="text-sm text-center text-gray-400">Tools</div>
-//           </aside> */}
-//         </div>
-//       </div>
-//       {/* <WhiteboardClient boardId={boardId} /> */}
-//     </>
-//   );
-// }
-
-// pages/board/[boardId].tsx atau app/board/[boardId]/page.tsx
+// app/whiteboard/[boardId]/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -83,9 +16,25 @@ export default function BoardPage() {
   const boardId = params?.boardId as string;
   const usernameFromQuery = searchParams?.get("user");
   const emailFromQuery = searchParams?.get("email") ?? undefined;
+  const [boardTitle, setBoardTitle] = useState("Untitled Board");
 
   const { user, isLoading, login, logout, isAuthenticated } = useUser();
   const [showLoginModal, setShowLoginModal] = useState(false);
+
+  useEffect(() => {
+    const fetchBoard = async () => {
+      try {
+        const res = await fetch(`/api/boards/${boardId}`);
+        if (!res.ok) throw new Error("Board not found");
+        const data = await res.json();
+        setBoardTitle(data.title || "Untitled Board");
+      } catch {
+        setBoardTitle("Untitled Board");
+      }
+    };
+
+    fetchBoard();
+  }, [boardId]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !usernameFromQuery) {
@@ -100,15 +49,15 @@ export default function BoardPage() {
 
   const handleLogout = () => {
     logout();
-    setShowLoginModal(true);
+    router.push("/dashboard"); // ✅ arahkan ke dashboard
   };
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-20 w-20 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">読み込み中...</p>
         </div>
       </div>
     );
@@ -119,66 +68,81 @@ export default function BoardPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-800 mb-4">
-            Invalid Board ID
+            無効なボードID
           </h1>
           <button
             onClick={() => router.push("/")}
             className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
           >
-            Go Home
+            ホームに戻る
           </button>
         </div>
       </div>
     );
   }
 
-  const currentUsername = usernameFromQuery || user?.username || "Guest";
+  const currentUsername = usernameFromQuery || user?.username || "ゲスト";
   const currentEmail = emailFromQuery || user?.email;
   const currentUserId = `${currentUsername
     .toLowerCase()
     .replace(/\s+/g, "-")}-${Math.random().toString(36).slice(2, 6)}`;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-white">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold text-gray-800">
-              Collaborative Canvas
-            </h1>
-            <span className="text-sm text-gray-500">Board: {boardId}</span>
-          </div>
+      <header className="sticky top-0 z-50 w-full bg-white/70 backdrop-blur-md shadow-sm border-b px-4 py-2 flex items-center justify-between gap-2">
+        {/* Kiri - Judul Board */}
+        <div className="flex items-center gap-3">
+          <span className="text-xl">🧭</span>
+          <input
+            className="bg-transparent border-none text-lg font-medium text-gray-900 focus:outline-none focus:ring-0 w-64"
+            value={boardTitle}
+            onChange={(e) => setBoardTitle(e.target.value)}
+            placeholder="Untitled Board"
+          />
+
+          <span className="text-xs text-purple-600 bg-purple-100 rounded px-2 py-0.5 font-semibold">
+            Free
+          </span>
+        </div>
+
+        {/* Kanan - Share & User */}
+        <div className="flex items-center gap-3">
+          <button className="bg-purple-600 text-white text-sm px-4 py-1.5 rounded hover:bg-purple-700 font-medium">
+            Share
+          </button>
 
           {(user || usernameFromQuery) && (
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                  {currentUsername.charAt(0).toUpperCase()}
-                </div>
-                <span className="text-sm text-gray-700">{currentUsername}</span>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                {currentUsername.charAt(0).toUpperCase()}
               </div>
-
+              <span className="text-sm text-gray-700 truncate max-w-[120px]">
+                {currentUsername}
+              </span>
               <button
                 onClick={handleLogout}
-                className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-300 hover:border-gray-400"
+                className="text-sm border px-3 py-1 rounded text-gray-500 hover:text-gray-700 hover:border-gray-400"
               >
-                Logout
+                ログアウト
               </button>
             </div>
           )}
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex h-[calc(100vh-73px)]">
+      {/* Body Layout */}
+      <div className="flex-1 flex flex-col md:flex-row h-[calc(100vh-64px)] overflow-hidden">
+        {/* Toolbar - repositioned in top for mobile */}
         {/* Toolbar */}
-        <div className="w-16 bg-white border-r border-gray-200">
-          <Toolbar />
-        </div>
+        <aside>
+          <div className="flex md:flex-col justify-center md:justify-start items-center gap-4 py-2 md:py-4 overflow-x-auto md:overflow-visible">
+            <Toolbar />
+          </div>
+        </aside>
 
-        {/* Canvas */}
-        <div className="flex-1 relative">
+        {/* Canvas Area */}
+        <main className="flex-1 relative min-w-0">
           {user || usernameFromQuery ? (
             <Canvas
               boardId={boardId}
@@ -190,23 +154,22 @@ export default function BoardPage() {
             />
           ) : (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center">
+              <div className="text-center px-4">
                 <p className="text-gray-600 mb-4">
-                  Please log in to use the canvas
+                  ご利用の前にログインしてください
                 </p>
                 <button
                   onClick={() => setShowLoginModal(true)}
                   className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                 >
-                  Login
+                  ログイン
                 </button>
               </div>
             </div>
           )}
-        </div>
+        </main>
       </div>
 
-      {/* Login Modal */}
       <LoginModal isOpen={showLoginModal} onLogin={handleLogin} />
     </div>
   );

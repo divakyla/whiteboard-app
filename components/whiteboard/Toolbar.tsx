@@ -1,42 +1,3 @@
-// "use client";
-
-// import React from "react";
-// import { useUIStore } from "@/store/uiStore";
-// import type { Tool } from "@/store/uiStore";
-
-// const tools: { id: Tool; label: string }[] = [
-//   { id: "select", label: "Select" },
-//   { id: "rectangle", label: "Rectangle" },
-//   { id: "circle", label: "Circle" },
-//   { id: "text", label: "Text" },
-// ];
-
-// export default function Toolbar() {
-//   const activeTool = useUIStore((state) => state.activeTool);
-//   const setActiveTool = useUIStore((state) => state.setActiveTool);
-
-//   return (
-//     <div className="flex space-x-2 p-2 bg-gray-100 border-b border-gray-300">
-//       {tools.map((tool) => (
-//         <button
-//           key={tool.id}
-//           onClick={() => setActiveTool(tool.id)}
-//           className={`px-3 py-1 rounded ${
-//             activeTool === tool.id
-//               ? "bg-blue-500 text-white"
-//               : "bg-white text-gray-700"
-//           } hover:bg-blue-400 hover:text-white transition`}
-//           type="button"
-//           aria-pressed={activeTool === tool.id}
-//           title={tool.label}
-//         >
-//           {tool.label}
-//         </button>
-//       ))}
-//     </div>
-//   );
-// }
-
 import React from "react";
 import { useUIStore, type Tool } from "@/store/uiStore";
 import { MousePointer, Square, Circle, Type, Move, Trash2 } from "lucide-react";
@@ -53,30 +14,39 @@ const tools = [
 export default function Toolbar() {
   const activeTool = useUIStore((state) => state.activeTool);
   const setActiveTool = useUIStore((state) => state.setActiveTool);
-  const clearShapes: () => void = useCanvasStore(
-    (state: { clearShapes: () => void }) => state.clearShapes
-  );
+  const selectedShapeId = useCanvasStore((s) => s.selectedShapeId);
+  const deleteShape = useCanvasStore((s) => s.deleteShape);
+  const zoomLevel = useCanvasStore((s) => s.zoom);
+  const setZoom = useCanvasStore((s) => s.setZoom);
 
-  const handleClearAll = () => {
-    if (confirm("Are you sure you want to clear all shapes?")) {
-      clearShapes();
-      // TODO: Also emit clear event to other users via socket
+  const zoom = (delta: number) => {
+    const nextZoom = Math.min(2, Math.max(0.2, zoomLevel + delta));
+    setZoom(nextZoom);
+  };
+
+  const handleDelete = () => {
+    if (selectedShapeId && deleteShape) {
+      deleteShape(selectedShapeId);
     }
   };
 
+  const handleToolClick = (toolId: Tool) => {
+    setActiveTool(activeTool === toolId ? null : toolId);
+  };
+
   return (
-    <div className="flex flex-col items-center py-4 gap-2">
+    <div className="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-50 bg-white/90 backdrop-blur-md shadow-xl border border-gray-200 rounded-xl px-4 py-2 flex items-center gap-2 overflow-x-auto max-w-[95vw]">
       {tools.map((tool) => {
         const Icon = tool.icon;
         return (
           <button
             key={tool.id}
-            onClick={() => setActiveTool(tool.id as Tool)}
+            onClick={() => handleToolClick(tool.id as Tool)}
             className={`
               w-10 h-10 rounded-lg flex items-center justify-center transition-colors
               ${
                 activeTool === tool.id
-                  ? "bg-blue-500 text-white"
+                  ? "bg-purple-500 text-white"
                   : "text-gray-600 hover:bg-gray-100"
               }
             `}
@@ -87,16 +57,30 @@ export default function Toolbar() {
         );
       })}
 
-      {/* Separator */}
-      <div className="w-6 h-px bg-gray-300 my-2" />
+      <div className="w-px h-6 bg-gray-300 mx-2" />
 
-      {/* Clear All Button */}
       <button
-        onClick={handleClearAll}
-        className="w-10 h-10 rounded-lg flex items-center justify-center text-red-600 hover:bg-red-50 transition-colors"
-        title="Clear All"
+        onClick={handleDelete}
+        className="w-10 h-10 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-100 transition-colors"
+        title="Delete Selected"
       >
         <Trash2 size={20} />
+      </button>
+      <div className="w-px h-6 bg-gray-300 mx-2" />
+
+      <button
+        onClick={() => zoom(-0.1)}
+        className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors text-gray-600"
+        title="Zoom Out"
+      >
+        －
+      </button>
+      <button
+        onClick={() => zoom(0.1)}
+        className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors text-gray-600"
+        title="Zoom In"
+      >
+        ＋
       </button>
     </div>
   );

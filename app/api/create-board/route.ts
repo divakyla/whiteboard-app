@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
+  const { title } = await req.json();
+
+  if (typeof title !== "string" || title.trim() === "") {
+    return NextResponse.json(
+      { error: "Judul board tidak valid" },
+      { status: 400 }
+    );
+  }
+
   try {
-    const { title } = await req.json();
     const newBoard = await prisma.board.create({
       data: {
         title: title || "Untitled",
