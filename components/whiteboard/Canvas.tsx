@@ -85,6 +85,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
     new Map()
   );
   const generateUniqueId = () => `${currentUser.id}-${uuidv4()}`;
+  //  const [socketId, setSocketId] = useState<string | null>(null);
 
   // Text input state
   const [textInput, setTextInput] = useState<{
@@ -181,113 +182,113 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
   useEffect(() => {
     if (!boardId || !currentUser?.id || !currentUser?.username) return;
 
-    const initSocket = async () => {
-      try {
-        // Wake up the Socket.IO server (Next.js App Router)
-        const res = await fetch("/api/socket", { method: "POST" });
-        const text = await res.text();
-        console.log("🛰️ Socket POST:", text);
+    const socketInstance = io("http://localhost:3001", {
+      path: "/api/socket",
+      transports: ["websocket"],
+    });
 
-        const socketInstance = io("http://localhost:3001", {
-          path: "/api/socket",
-          transports: ["websocket"],
-          timeout: 10000,
+    setSocket(socketInstance); // Simpan ke state React
+
+    socketInstance.on("connect", () => {
+      console.log("✅ Connected to collaboration server");
+      setIsConnected(true);
+
+      // Simpan socketId milik sendiri (bukan currentUser.id)
+      // if (socketInstance.id) {
+      //   setSocketId(socketInstance.id);
+      // }
+
+      // Emit join board event
+      socketInstance.emit("join-board", {
+        boardId,
+        userId: currentUser.id,
+        username: currentUser.username,
+      });
+    });
+
+    socketInstance.on("connect_error", (err) => {
+      console.error("❌ Socket connection error:", err.message);
+    });
+
+    socketInstance.on("disconnect", () => {
+      console.warn("🔌 Disconnected from collaboration server");
+      setIsConnected(false);
+      // setSocketId(null);
+    });
+
+    // 👥 User join & leave log
+    socketInstance.on("user-join", ({ username }) => {
+      console.log(`👋 ${username} joined the board`);
+    });
+
+    socketInstance.on("user-leave", ({ userId, username }) => {
+      console.log(`👋 ${username} left the board`);
+      setOtherUsers((prev) => {
+        const map = new Map(prev);
+        map.delete(userId);
+        return map;
+      });
+    });
+
+    // 🖱️ Cursor movement
+    socketInstance.on("cursor-move", (data) => {
+      if (data.userId !== currentUser.id) {
+        setOtherUsers((prev) => {
+          const map = new Map(prev);
+          map.set(data.userId, { ...data, lastSeen: Date.now() });
+          return map;
         });
-
-        // Join board
-        socketInstance.on("connect", () => {
-          console.log("✅ Connected to collaboration server");
-          setIsConnected(true);
-
-          socketInstance.emit("join-board", {
-            boardId,
-            userId: currentUser.id,
-            username: currentUser.username,
-          });
-        });
-
-        socketInstance.on("connect_error", (err) => {
-          console.error("❌ Socket connection error:", err.message);
-        });
-
-        socketInstance.on("disconnect", () => {
-          console.warn("🔌 Disconnected from collaboration server");
-          setIsConnected(false);
-        });
-
-        // 👥 User events
-        socketInstance.on("user-join", ({ username }) => {
-          console.log(`👋 ${username} joined the board`);
-        });
-
-        socketInstance.on("user-leave", ({ userId, username }) => {
-          console.log(`👋 ${username} left the board`);
-          setOtherUsers((prev) => {
-            const map = new Map(prev);
-            map.delete(userId);
-            return map;
-          });
-        });
-
-        // 🖱️ Cursor movement
-        socketInstance.on("cursor-move", (data) => {
-          if (data.userId !== currentUser.id) {
-            setOtherUsers((prev) => {
-              const map = new Map(prev);
-              map.set(data.userId, { ...data, lastSeen: Date.now() });
-              return map;
-            });
-          }
-        });
-
-        // 🧩 Shape events
-        socketInstance.on("shape-add", ({ shape, userId }) => {
-          if (userId !== currentUser.id) {
-            addShape(shape);
-            setShapePreviews((prev) => {
-              const map = new Map(prev);
-              map.delete(userId); // ✅ hilangkan bayangan
-              return map;
-            });
-          }
-        });
-
-        socketInstance.on("shape-update", ({ id, updates, userId }) => {
-          if (userId !== currentUser.id) {
-            updateShape(id, updates);
-          }
-        });
-
-        socketInstance.on("shape-remove", ({ id, userId }) => {
-          if (userId !== currentUser.id) {
-            removeShape(id);
-          }
-        });
-
-        socketInstance.on("shape-preview", ({ userId, shape }) => {
-          if (userId !== currentUser.id) {
-            setShapePreviews((prev) => {
-              const map = new Map(prev);
-              map.set(userId, shape);
-              return map;
-            });
-          }
-        });
-
-        // Simpan socket
-        setSocket(socketInstance);
-
-        // Bersihkan koneksi saat unmount
-        return () => {
-          console.log("🧹 Disconnecting socket...");
-          socketInstance.disconnect();
-        };
-      } catch (err) {
-        console.error("❌ Failed to initialize socket:", err);
       }
-    };
+    });
 
-    initSocket();
+    // 🧩 Shape events
+    socketInstance.on("shape-add", ({ shape, userId }) => {
+      if (userId !== currentUser.id) {
+        addShape(shape);
+        setShapePreviews((prev) => {
+          const map = new Map(prev);
+          map.delete(userId);
+          return map;
+        });
+      }
+    });
+
+    socketInstance.on("shape-update", ({ id, updates, userId }) => {
+      if (userId !== currentUser.id) {
+        updateShape(id, updates);
+      }
+    });
+
+    socketInstance.on("shape-remove", ({ id, userId }) => {
+      if (userId !== currentUser.id) {
+        removeShape(id);
+      }
+    });
+
+    socketInstance.on("shape-preview", ({ userId, shape }) => {
+      if (userId !== currentUser.id) {
+        setShapePreviews((prev) => {
+          const map = new Map(prev);
+          map.set(userId, shape);
+          return map;
+        });
+      }
+    });
+
+    // 🧹 Clean up disconnected users
+    socketInstance.on("user-disconnected", (userId) => {
+      setOtherUsers((prev) => {
+        const map = new Map(prev);
+        map.delete(userId);
+        return map;
+      });
+    });
+
+    // Cleanup on unmount
+    return () => {
+      console.log("🧹 Disconnecting socket...");
+      socketInstance.disconnect();
+    };
   }, [
     boardId,
     currentUser.id,

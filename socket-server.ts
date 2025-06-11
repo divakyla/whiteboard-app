@@ -1,50 +1,70 @@
-// socket-server.ts
+// socket-server.ts (server WebSocket mandiri pakai port 3001)
 import { createServer } from "http";
 import { Server } from "socket.io";
 
-const server = createServer();
+const httpServer = createServer();
 
-const io = new Server(server, {
+const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000", // frontend
-    methods: ["GET", "POST"],
+    origin: "*", // ganti jika kamu ingin batasi domain
   },
-  path: "/api/socket",
+  path: "/api/socket", // sesuaikan dengan path di client
 });
 
-io.on("connection", (socket) => {
-  console.log("🟢 Client connected:", socket.id);
+type CursorData = {
+  x: number;
+  y: number;
+  username: string;
+  color: string;
+};
 
-  socket.on("join-board", ({ boardId, userId, username }) => {
-    socket.join(boardId);
-    socket.to(boardId).emit("user-join", { userId, username });
+const cursorMap = new Map<string, CursorData>();
+
+io.on("connection", (socket) => {
+  console.log(`✅ User connected: ${socket.id}`);
+
+  // Saat menerima pergerakan cursor dari client
+  socket.on("cursor-move", (data) => {
+    const { userId, x, y, username, color } = data;
+
+    cursorMap.set(userId, { x, y, username, color });
+
+    // Broadcast ke user lain
+    socket.broadcast.emit("cursor-move", {
+      userId,
+      x,
+      y,
+      username,
+      color,
+    });
   });
 
-  socket.on("cursor-move", ({ boardId, ...rest }) => {
-    socket.to(boardId).emit("cursor-move", rest);
+  // Tangani event lainnya seperti shape-add, shape-update, dll
+  socket.on("shape-add", (data) => {
+    socket.broadcast.emit("shape-add", data);
+  });
+
+  socket.on("shape-update", (data) => {
+    socket.broadcast.emit("shape-update", data);
+  });
+
+  socket.on("shape-remove", (data) => {
+    socket.broadcast.emit("shape-remove", data);
   });
 
   socket.on("shape-preview", (data) => {
-    socket.to(data.boardId).emit("shape-preview", data);
+    socket.broadcast.emit("shape-preview", data);
   });
 
-  socket.on("shape-add", (data) => {
-    socket.to(data.boardId).emit("shape-add", data);
-  });
-
-  socket.on("shape-update", ({ boardId, id, updates, userId }) => {
-    socket.to(boardId).emit("shape-update", { id, updates, userId });
-  });
-
-  socket.on("shape-remove", ({ boardId, id, userId }) => {
-    socket.to(boardId).emit("shape-remove", { id, userId });
-  });
-
+  // Saat user disconnect
   socket.on("disconnect", () => {
-    console.log("🔴 Client disconnected:", socket.id);
+    console.log(`❌ User disconnected: ${socket.id}`);
+
+    // Tidak tahu userId di sini, jadi user-disconnected tidak bisa dikirim akurat
+    // Kalau mau, kamu bisa simpan mapping socket.id ⇄ userId saat join
   });
 });
 
-server.listen(3001, () => {
-  console.log("🚀 Socket.IO server running on port 3001");
+httpServer.listen(3001, () => {
+  console.log("🚀 Socket.IO server running at http://localhost:3001");
 });
