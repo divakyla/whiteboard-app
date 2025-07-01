@@ -13,8 +13,14 @@ model Board {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  userId    String   
+  isPublic   Boolean  @default(false) 
+
   shapes    Shape[]
+  sharedWith SharedBoard[]
+  visibility String
 }
+
 
 model Shape {
   id        String   @id @default(cuid())
@@ -30,9 +36,20 @@ model Shape {
   fontSize     Int?
   fill         String?
   stroke       String?    
-  strokeWidth  Float?     
+  strokeWidth  Float?
+  points  Json?
+  pathData String?
   board     Board    @relation(fields: [boardId], references: [id])
   boardId   String
   createdAt DateTime @default(now())
 }
 
+model SharedBoard {
+  id        String   @id @default(cuid())
+  boardId   String
+  userId    String
+
+  board     Board    @relation(fields: [boardId], references: [id])
+
+  @@unique([boardId, userId]) 
+}

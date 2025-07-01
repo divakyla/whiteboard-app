@@ -1,6 +1,13 @@
 import { create } from "zustand";
 
-export type Tool = "select" | "move" | "rectangle" | "circle" | "text";
+export type Tool =
+  | "select"
+  | "move"
+  | "rectangle"
+  | "circle"
+  | "text"
+  | "pen"
+  | "eraser";
 
 interface UIState {
   activeTool: Tool | null;

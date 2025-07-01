@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { Rectangle, Circle, TextShape } from "@/types/canvas";
+import { Rectangle, Circle, TextShape, PenShape } from "@/types/canvas";
 
-type Shape = Rectangle | Circle | TextShape;
+type Shape = Rectangle | Circle | TextShape | PenShape;
 
 interface CanvasState {
   shapes: Shape[];
@@ -18,6 +18,10 @@ interface CanvasState {
   setZoom: (zoom: number) => void;
 
   deleteShape?: (id: string) => Promise<void>; // Add this line// ✅
+  penColor: string;
+  setPenColor: (color: string) => void;
+  penType: string;
+  setPenType: (type: string) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set) => ({
@@ -51,4 +55,8 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
   zoom: 1,
   setZoom: (zoom) => set({ zoom }),
+  penColor: "#000000",
+  setPenColor: (color) => set({ penColor: color }),
+  penType: "default",
+  setPenType: (type) => set({ penType: type }),
 }));

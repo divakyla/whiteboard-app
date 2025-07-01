@@ -62,6 +62,8 @@ export async function POST(req: NextRequest) {
         fill: shape.fill ?? null,
         stroke: shape.stroke ?? null,
         strokeWidth: shape.strokeWidth ?? null,
+        points: shape.points ?? null,
+        pathData: shape.pathData ?? null,
         boardId,
       },
     });

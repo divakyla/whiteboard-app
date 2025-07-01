@@ -8,15 +8,139 @@ import React, {
   useMemo,
 } from "react";
 import { useUIStore } from "@/store/uiStore";
-import { Rectangle, Circle, TextShape } from "@/types/canvas";
+// import type { Tool } from "@/store/uiStore";
+
+import { Wifi, WifiOff, Users } from "lucide-react";
+import { Rectangle, Circle, TextShape, PenShape } from "@/types/canvas";
 import { useCanvasStore } from "@/store/canvasStore";
 import Shape from "@/components/whiteboard/elements/Shape";
 import { io, Socket } from "socket.io-client";
 import Cursor from "@/components/whiteboard/Cursor";
 import { v4 as uuidv4 } from "uuid"; // ✅ Gunakan UUID unik untuk semua shape
+import { useSession } from "next-auth/react";
+
+// import Toolbar from "./Toolbar";
 
 type Point = { x: number; y: number };
-type CanvasShape = Rectangle | Circle | TextShape;
+type CanvasShape = Rectangle | Circle | TextShape | PenShape;
+
+// ✨ Smooth pen drawing utilities
+interface SmoothPoint extends Point {
+  pressure?: number;
+  timestamp?: number;
+}
+
+class PenSmoother {
+  private points: SmoothPoint[] = [];
+  private lastPoint: SmoothPoint | null = null;
+  private minDistance = 2; // Minimum distance between points
+  private smoothingFactor = 0.5; // How much to smooth (0-1)
+
+  addPoint(point: SmoothPoint): SmoothPoint[] {
+    // Skip if too close to last point
+    if (this.lastPoint) {
+      const distance = Math.sqrt(
+        Math.pow(point.x - this.lastPoint.x, 2) +
+          Math.pow(point.y - this.lastPoint.y, 2)
+      );
+
+      if (distance < this.minDistance) {
+        return this.points;
+      }
+    }
+
+    // Add timestamp if not provided
+    if (!point.timestamp) {
+      point.timestamp = Date.now();
+    }
+
+    this.points.push(point);
+    this.lastPoint = point;
+
+    // Keep only recent points for performance
+    if (this.points.length > 100) {
+      this.points = this.points.slice(-50);
+    }
+
+    return this.getSmoothedPoints();
+  }
+
+  private getSmoothedPoints(): SmoothPoint[] {
+    if (this.points.length < 3) return this.points;
+
+    const smoothed: SmoothPoint[] = [this.points[0]];
+
+    for (let i = 1; i < this.points.length - 1; i++) {
+      const prev = this.points[i - 1];
+      const curr = this.points[i];
+      const next = this.points[i + 1];
+
+      // Apply smoothing algorithm
+      const smoothX =
+        curr.x + (prev.x + next.x - 2 * curr.x) * this.smoothingFactor;
+      const smoothY =
+        curr.y + (prev.y + next.y - 2 * curr.y) * this.smoothingFactor;
+
+      smoothed.push({
+        x: smoothX,
+        y: smoothY,
+        pressure: curr.pressure,
+        timestamp: curr.timestamp,
+      });
+    }
+
+    // Always include the last point
+    if (this.points.length > 1) {
+      smoothed.push(this.points[this.points.length - 1]);
+    }
+
+    return smoothed;
+  }
+
+  // Convert points to SVG path for even smoother curves
+  getPathData(): string {
+    const points = this.getSmoothedPoints();
+    if (points.length < 2) return "";
+
+    let path = `M ${points[0].x} ${points[0].y}`;
+
+    if (points.length === 2) {
+      path += ` L ${points[1].x} ${points[1].y}`;
+      return path;
+    }
+
+    // Use quadratic curves for smoothness
+    for (let i = 1; i < points.length - 1; i++) {
+      const curr = points[i];
+      const next = points[i + 1];
+
+      // Control point is the current point
+      const cpX = curr.x;
+      const cpY = curr.y;
+
+      // End point is midway to next point
+      const endX = (curr.x + next.x) / 2;
+      const endY = (curr.y + next.y) / 2;
+
+      path += ` Q ${cpX} ${cpY} ${endX} ${endY}`;
+    }
+
+    // Final line to last point
+    const lastPoint = points[points.length - 1];
+    path += ` L ${lastPoint.x} ${lastPoint.y}`;
+
+    return path;
+  }
+
+  reset() {
+    this.points = [];
+    this.lastPoint = null;
+  }
+
+  getPoints(): SmoothPoint[] {
+    return this.points;
+  }
+}
 
 // Types for collaboration
 interface UserCursor {
@@ -28,17 +152,9 @@ interface UserCursor {
   lastSeen: number;
 }
 
-// interface CollaborativeEvent {
-//   type: 'cursor-move' | 'shape-add' | 'shape-update' | 'shape-remove' | 'user-join' | 'user-leave';
-//   userId: string;
-//   username: string;
-//   data: any;
-//   boardId: string;
-// }
-
 interface CanvasProps {
   boardId: string;
-  currentUser: {
+  localUser: {
     id: string;
     username: string;
     email?: string;
@@ -66,12 +182,46 @@ const generateUserColor = (userId: string): string => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-export default function Canvas({ boardId, currentUser }: CanvasProps) {
+const StatusBar: React.FC<{
+  isConnected: boolean;
+  otherUsersCount: number;
+}> = ({ isConnected, otherUsersCount }) => (
+  <div className="fixed top-16 right-4 z-50">
+    <div className="flex items-center gap-3 bg-white rounded-xl shadow border border-gray-200 px-3 py-1.5">
+      <div className="flex items-center gap-2">
+        {isConnected ? (
+          <Wifi size={16} className="text-green-500" />
+        ) : (
+          <WifiOff size={16} className="text-red-500" />
+        )}
+        <span className="text-sm text-gray-600">
+          {isConnected ? "Connected" : "Disconnected"}
+        </span>
+      </div>
+      {otherUsersCount > 0 && (
+        <div className="flex items-center gap-2">
+          <Users size={16} className="text-blue-500" />
+          <span className="text-sm text-gray-600">
+            +{otherUsersCount} user{otherUsersCount > 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+export default function Canvas({ boardId }: CanvasProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const { data: session } = useSession();
+  const [localUser, setLocalUser] = useState<{
+    id: string;
+    username: string;
+  } | null>(null);
   const activeTool = useUIStore((state) => state.activeTool);
+  // const setActiveTool = useUIStore((state) => state.setActiveTool);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState<Point | null>(null);
   const [currentShape, setCurrentShape] = useState<CanvasShape | null>(null);
-  // const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
 
   // Collaborative states
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -80,12 +230,18 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
   );
   const [isConnected, setIsConnected] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const userColor = useRef(generateUserColor(currentUser.id));
+  const userColor = useRef(
+    localUser ? generateUserColor(localUser.id) : "#000"
+  );
   const [shapePreviews, setShapePreviews] = useState<Map<string, CanvasShape>>(
     new Map()
   );
-  const generateUniqueId = () => `${currentUser.id}-${uuidv4()}`;
-  //  const [socketId, setSocketId] = useState<string | null>(null);
+  const generateUniqueId = () => `${localUser?.id ?? "nouser"}-${uuidv4()}`;
+
+  // ✨ Smooth pen drawing states
+  const penSmoother = useRef(new PenSmoother());
+  const [currentPenPath, setCurrentPenPath] = useState<string>("");
+  // const [isDrawingPen, setIsDrawingPen] = useState(false);
 
   // Text input state
   const [textInput, setTextInput] = useState<{
@@ -114,6 +270,33 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
   }>(null);
   const zoom = useCanvasStore((s) => s.zoom);
   const setZoom = useCanvasStore((s) => s.setZoom);
+  const penColor = useCanvasStore((s) => s.penColor);
+  const penType = useCanvasStore((s) => s.penType);
+  //   const canvasWidth = 1920;
+  // const canvasHeight = 1080;
+  const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
+
+  // Set current user dari session
+  useEffect(() => {
+    if (session?.user?.id && session.user.username) {
+      setLocalUser({
+        id: session.user.id,
+        username: session.user.username,
+      });
+    }
+  }, [session]);
+
+  useEffect(() => {
+    const updateSize = () => {
+      setCanvasSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+    updateSize();
+    window.addEventListener("resize", updateSize);
+    return () => window.removeEventListener("resize", updateSize);
+  }, []);
 
   // 🧼 Tambahkan validasi agar Shape ID tidak duplikat saat rendering
   const uniqueSavedShapes = useMemo(() => {
@@ -180,7 +363,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
 
   // Initialize Socket.IO connection
   useEffect(() => {
-    if (!boardId || !currentUser?.id || !currentUser?.username) return;
+    if (!boardId || !localUser?.id || !localUser?.username) return;
 
     const socketInstance = io("http://localhost:3001", {
       path: "/api/socket",
@@ -201,8 +384,8 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       // Emit join board event
       socketInstance.emit("join-board", {
         boardId,
-        userId: currentUser.id,
-        username: currentUser.username,
+        userId: localUser.id,
+        username: localUser.username,
       });
     });
 
@@ -232,7 +415,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
 
     // 🖱️ Cursor movement
     socketInstance.on("cursor-move", (data) => {
-      if (data.userId !== currentUser.id) {
+      if (data.userId !== localUser?.id) {
         setOtherUsers((prev) => {
           const map = new Map(prev);
           map.set(data.userId, { ...data, lastSeen: Date.now() });
@@ -243,7 +426,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
 
     // 🧩 Shape events
     socketInstance.on("shape-add", ({ shape, userId }) => {
-      if (userId !== currentUser.id) {
+      if (userId !== localUser.id) {
         addShape(shape);
         setShapePreviews((prev) => {
           const map = new Map(prev);
@@ -254,19 +437,19 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
     });
 
     socketInstance.on("shape-update", ({ id, updates, userId }) => {
-      if (userId !== currentUser.id) {
+      if (userId !== localUser.id) {
         updateShape(id, updates);
       }
     });
 
     socketInstance.on("shape-remove", ({ id, userId }) => {
-      if (userId !== currentUser.id) {
+      if (userId !== localUser.id) {
         removeShape(id);
       }
     });
 
     socketInstance.on("shape-preview", ({ userId, shape }) => {
-      if (userId !== currentUser.id) {
+      if (userId !== localUser.id) {
         setShapePreviews((prev) => {
           const map = new Map(prev);
           map.set(userId, shape);
@@ -291,8 +474,8 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
     };
   }, [
     boardId,
-    currentUser.id,
-    currentUser.username,
+    localUser?.id,
+    localUser?.username,
     addShape,
     updateShape,
     removeShape,
@@ -317,43 +500,67 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
     return () => clearInterval(interval);
   }, []);
 
-  const getCoordinates = (e: React.MouseEvent): Point => {
-    const svg = e.currentTarget as SVGSVGElement;
-    const rect = svg.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-  };
-
-  const getCanvasCoordinates = (e: React.MouseEvent): Point => {
-    if (!canvasRef.current) return { x: 0, y: 0 };
-    const rect = canvasRef.current.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-  };
-
-  // Emit cursor movement
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (socket && isConnected) {
-        const { x, y } = getCanvasCoordinates(e);
-
-        socket.emit("cursor-move", {
-          boardId,
-          userId: currentUser.id,
-          username: currentUser.username,
-          x,
-          y,
-          color: userColor.current,
-        });
-      }
+  const getCoordinates = useCallback(
+    (e: React.MouseEvent): Point => {
+      const svg = e.currentTarget as SVGSVGElement;
+      const rect = svg.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) / zoom,
+        y: (e.clientY - rect.top) / zoom,
+      };
     },
-    [socket, isConnected, boardId, currentUser]
-  );
-  console.log("📍 Other users:", Array.from(otherUsers.entries()));
+    [zoom]
+  ); // tambahkan zoom sebagai dependency jika zoom bisa berubah
+
+  // const handleMouseMove = useCallback(
+  //   (e: React.MouseEvent) => {
+  //     if (socket && isConnected) {
+  //       const { x, y } = getCoordinates(e);
+
+  //       socket.emit("cursor-move", {
+  //         boardId,
+  //         userId: currentUser.id,
+  //         username: currentUser.username,
+  //         x,
+  //         y,
+  //         color: userColor.current,
+  //       });
+  //     }
+  //   },
+  //   [socket, isConnected, boardId, currentUser, getCoordinates]
+  // );
+  // console.log("📍 Other users:", Array.from(otherUsers.entries()));
+
+  useEffect(() => {
+    if (!socket || !localUser) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      socket.emit("cursor-move", {
+        boardId,
+        userId: localUser.id,
+        username: localUser.username,
+        x,
+        y,
+        color: userColor.current,
+      });
+
+      // Debugging
+      console.log("📤 Cursor dikirim:", {
+        userId: localUser.id,
+        username: localUser.username,
+      });
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [socket, localUser, boardId]);
 
   const saveShape = async (shape: CanvasShape, boardId: string) => {
     try {
@@ -385,29 +592,6 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       throw err;
     }
   };
-
-  // const saveShape = async (shape: CanvasShape) => {
-  //   try {
-  //     await fetch("/api/shapes", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({ boardId, shape }),
-  //     });
-
-  //     // Emit to other users
-  //     if (socket && isConnected) {
-  //       socket.emit("shape-add", {
-  //         boardId,
-  //         shape,
-  //         userId: currentUser.id,
-  //       });
-  //     }
-
-  //     console.log("Shape berhasil disimpan:", shape);
-  //   } catch (err) {
-  //     console.error("Gagal menyimpan shape:", err);
-  //   }
-  // };
 
   const fetchShapes = useCallback(async () => {
     try {
@@ -445,7 +629,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         removeShape(id);
 
         if (socket && isConnected) {
-          socket.emit("shape-remove", { boardId, id, userId: currentUser.id });
+          socket.emit("shape-remove", { boardId, id, userId: localUser?.id });
         }
 
         await fetchShapes();
@@ -453,7 +637,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         console.error("❌ Gagal hapus shape:", err);
       }
     },
-    [removeShape, socket, isConnected, boardId, currentUser.id, fetchShapes]
+    [removeShape, socket, isConnected, boardId, localUser?.id, fetchShapes]
   );
 
   useEffect(() => {
@@ -483,7 +667,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       socket.emit("shape-add", {
         boardId,
         shape: newTextShape,
-        userId: currentUser.id,
+        userId: localUser?.id,
       });
     }
   };
@@ -517,8 +701,80 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
   const onMouseDown = (e: React.MouseEvent) => {
     if (textInput) return;
 
-    const { x, y } = getCoordinates(e);
+    const svg = e.currentTarget as SVGSVGElement;
+    const rect = svg.getBoundingClientRect();
+    const mousePoint = {
+      x: (e.clientX - rect.left) / zoom,
+      y: (e.clientY - rect.top) / zoom,
+    };
 
+    const { x, y } = mousePoint;
+
+    // 🖊️ ✨ Enhanced Pen Tool with smoothing
+    if (activeTool === "pen") {
+      e.preventDefault();
+      setIsDrawing(true);
+
+      // Reset the smoother for new stroke
+      penSmoother.current.reset();
+
+      // Add first point
+      penSmoother.current.addPoint({
+        x,
+        y,
+        pressure: 1.0,
+        timestamp: Date.now(),
+      });
+
+      const initialPath = `M ${x} ${y}`;
+      setCurrentPenPath(initialPath);
+      return;
+    }
+
+    // 🧽 Eraser Tool
+    if (activeTool === "eraser") {
+      e.preventDefault();
+      setIsDrawing(true);
+      // Hapus shape yang diklik
+      const { x, y } = mousePoint;
+      const shapeToDelete = shapes.find((shape) => {
+        if (shape.type === "rectangle") {
+          return (
+            x >= shape.x &&
+            x <= shape.x + shape.width &&
+            y >= shape.y &&
+            y <= shape.y + shape.height
+          );
+        } else if (shape.type === "circle") {
+          const dx = x - shape.cx;
+          const dy = y - shape.cy;
+          return Math.sqrt(dx * dx + dy * dy) <= shape.r;
+        } else if (shape.type === "pen") {
+          return shape.points?.some(
+            (point) => Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2) < 10
+          );
+        } else if (shape.type === "text") {
+          return (
+            x >= shape.x &&
+            x <= shape.x + 100 &&
+            y >= shape.y - 20 &&
+            y <= shape.y
+          );
+        }
+        return false;
+      });
+
+      if (shapeToDelete) {
+        deleteShape(shapeToDelete.id);
+      }
+      return;
+    }
+
+    //   setCurrentPenPath(penSmoother.current.getPathData());
+    //   return;
+    // }
+
+    // 🅰️ Text Tool
     if (activeTool === "text") {
       e.preventDefault();
       e.stopPropagation();
@@ -526,6 +782,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       return;
     }
 
+    // 🖐️ Move Tool
     if (activeTool === "move") {
       const clickedShape = shapes.find((shape) => {
         if (shape.type === "rectangle") {
@@ -563,20 +820,15 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         setSelectedShapeId(clickedShape.id);
         setStartPoint({ x, y });
       } else {
-        // Start group selection box
         setSelectionRect({ x, y, width: 0, height: 0 });
         setStartPoint({ x, y });
-      }
-
-      if (!clickedShape) {
-        setSelectedShapeId(null); // ✅ reset seleksi kalau klik kosong
+        setSelectedShapeId(null); // Reset selection
       }
 
       return;
     }
 
-    setStartPoint({ x, y });
-
+    // 🟥 Rectangle Tool
     if (activeTool === "rectangle") {
       setIsDrawing(true);
       setCurrentShape({
@@ -590,7 +842,12 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         stroke: "black",
         strokeWidth: 2,
       });
-    } else if (activeTool === "circle") {
+      setStartPoint({ x, y });
+      return;
+    }
+
+    // ⚪ Circle Tool
+    if (activeTool === "circle") {
       setIsDrawing(true);
       setCurrentShape({
         id: generateUniqueId(),
@@ -602,18 +859,122 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         stroke: "black",
         strokeWidth: 2,
       });
-    } else if (activeTool === "select") {
+      setStartPoint({ x, y });
+      return;
+    }
+
+    // 🔍 Select Tool
+    if (activeTool === "select") {
       setSelectedShapeId(null);
+      setStartPoint({ x, y });
     }
   };
 
   const onMouseMoveCanvas = (e: React.MouseEvent) => {
-    handleMouseMove(e);
+    // Send cursor position to other users
+    if (socket && isConnected && localUser) {
+      const { x, y } = getCoordinates(e);
+      socket.emit("cursor-move", {
+        boardId,
+        userId: localUser.id,
+        username: localUser.username,
+        x,
+        y,
+        color: userColor.current,
+      });
+    }
     const { x, y } = getCoordinates(e);
 
     if (activeTool === "move" && draggingShapeId) {
       setDraggingShapeId(null);
       setStartPoint(null);
+    }
+
+    // ✏️ ✅ Pen tool → tambah titik baru ke path HANYA saat mouse ditekan
+    if (activeTool === "pen" && isDrawing) {
+      penSmoother.current.addPoint({
+        x,
+        y,
+        pressure: 1.0,
+        timestamp: Date.now(),
+      });
+
+      const pathData = penSmoother.current.getPathData();
+      setCurrentPenPath(pathData);
+
+      // Emit preview stroke ke user lain secara real-time
+      if (socket && isConnected && pathData) {
+        socket.emit("pen-preview", {
+          boardId,
+          userId: localUser?.id,
+          pathData,
+          color: penColor,
+          strokeWidth: penType === "marker" ? 4 : 2,
+        });
+      }
+
+      return;
+    }
+
+    // ✏️ Pen tool → tambah titik baru ke path
+    if (activeTool === "pen" && isDrawing) {
+      penSmoother.current.addPoint({
+        x,
+        y,
+        pressure: 1.0,
+        timestamp: Date.now(),
+      });
+
+      const pathData = penSmoother.current.getPathData();
+      setCurrentPenPath(pathData);
+
+      // Emit preview stroke ke user lain secara real-time
+      if (socket && isConnected && pathData) {
+        socket.emit("pen-preview", {
+          boardId,
+          userId: localUser?.id,
+          pathData,
+          color: penColor,
+          strokeWidth: penType === "marker" ? 4 : 2,
+        });
+      }
+
+      return;
+    }
+
+    // 🧽 Eraser tool - hapus shape saat drag
+    if (activeTool === "eraser" && isDrawing) {
+      const shapeToDelete = shapes.find((shape) => {
+        if (shape.type === "rectangle") {
+          return (
+            x >= shape.x &&
+            x <= shape.x + shape.width &&
+            y >= shape.y &&
+            y <= shape.y + shape.height
+          );
+        } else if (shape.type === "circle") {
+          const dx = x - shape.cx;
+          const dy = y - shape.cy;
+          return Math.sqrt(dx * dx + dy * dy) <= shape.r;
+        } else if (shape.type === "pen") {
+          return shape.points?.some(
+            (point) => Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2) < 10
+          );
+        } else if (shape.type === "text") {
+          return (
+            x >= shape.x &&
+            x <= shape.x + 100 &&
+            y >= shape.y - 20 &&
+            y <= shape.y
+          );
+        }
+        return false;
+      });
+
+      if (shapeToDelete) {
+        deleteShape(shapeToDelete.id);
+      }
+      return;
     }
 
     // 🟦 Multi-select rectangle in progress
@@ -626,7 +987,6 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         width,
         height,
       });
-
       return;
     }
 
@@ -660,7 +1020,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         if (socket && isConnected) {
           socket.emit("shape-update", {
             boardId,
-            userId: currentUser.id,
+            userId: localUser?.id,
             id: updated.id,
             updates: updated,
           });
@@ -675,7 +1035,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
     // ⛔ Skip if not drawing
     if (!isDrawing || !startPoint || !currentShape || textInput) return;
 
-    // 🟩 Drawing mode
+    // 🟩 Drawing rectangle/circle mode
     if (currentShape.type === "rectangle") {
       const newShape = {
         ...currentShape,
@@ -687,7 +1047,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       if (socket && isConnected) {
         socket.emit("shape-preview", {
           boardId,
-          userId: currentUser.id,
+          userId: localUser?.id,
           shape: newShape,
         });
       }
@@ -703,7 +1063,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       if (socket && isConnected) {
         socket.emit("shape-preview", {
           boardId,
-          userId: currentUser.id,
+          userId: localUser?.id,
           shape: newShape,
         });
       }
@@ -713,6 +1073,45 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
   const onMouseUp = async () => {
     if (textInput) return;
 
+    // ✨ Enhanced pen tool completion with path smoothing
+    if (activeTool === "pen" && isDrawing) {
+      const smoothedPoints = penSmoother.current.getPoints();
+
+      if (smoothedPoints.length > 1) {
+        const pathData = penSmoother.current.getPathData();
+
+        const penShape: PenShape = {
+          id: generateUniqueId(),
+          type: "pen",
+          points: smoothedPoints.map((p) => ({ x: p.x, y: p.y })), // Convert to simple points
+          pathData, // Store the smooth path data
+          stroke: penColor,
+          strokeWidth: penType === "marker" ? 4 : 2,
+        };
+
+        try {
+          const saved = await saveShape(penShape, boardId);
+          addShape(saved);
+
+          if (socket && isConnected) {
+            socket.emit("shape-add", {
+              boardId,
+              shape: saved,
+              userId: localUser?.id,
+            });
+          }
+        } catch (err) {
+          console.error("❌ Gagal simpan pen:", err);
+        }
+      }
+
+      // Reset pen states
+      setIsDrawing(false);
+      setCurrentPenPath("");
+      penSmoother.current.reset();
+      return;
+    }
+    // 🟦 Multi-select selesai
     if (selectionRect) {
       const { x, y, width, height } = selectionRect;
       const minX = Math.min(x, x + width);
@@ -754,15 +1153,23 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       return;
     }
 
+    // 🧽 Eraser selesai
+    if (activeTool === "eraser" && isDrawing) {
+      setIsDrawing(false);
+      return;
+    }
+
+    // 🟨 Selesai drag/resize
     if (isDragging || isResizing) {
       setIsDragging(false);
       setIsResizing(false);
       setDraggingShapeId(null);
       setStartPoint(null);
-      setSelectedShapeId(null); // ✅ reset seleksi
+      setSelectedShapeId(null);
       return;
     }
 
+    // 🟥 Selesai menggambar rectangle/circle
     if (isDrawing && currentShape) {
       let shouldSave = false;
 
@@ -784,7 +1191,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
             socket.emit("shape-add", {
               boardId,
               shape: saved,
-              userId: currentUser.id,
+              userId: localUser?.id,
             });
           }
         } catch (err) {
@@ -794,7 +1201,9 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
 
       setShapePreviews((prev) => {
         const newMap = new Map(prev);
-        newMap.delete(currentUser.id);
+        if (localUser) {
+          newMap.delete(localUser.id);
+        }
         return newMap;
       });
 
@@ -804,229 +1213,31 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
     }
   };
 
-  // const onMouseDown = (e: React.MouseEvent) => {
-  //   if (textInput) return;
-
-  //   const { x, y } = getCoordinates(e);
-
-  //   // ✏️ Text Tool
-  //   if (activeTool === "text") {
-  //     e.preventDefault();
-  //     e.stopPropagation();
-  //     setTextInput({ x, y, value: "" });
-  //     return;
-  //   }
-
-  //   // 🔀 Move Tool (cari shape yang diklik)
-  //   if (activeTool === "move") {
-  //     const clickedShape = shapes.find((shape) => {
-  //       if (shape.type === "rectangle") {
-  //         return (
-  //           x >= shape.x &&
-  //           x <= shape.x + shape.width &&
-  //           y >= shape.y &&
-  //           y <= shape.y + shape.height
-  //         );
-  //       } else if (shape.type === "circle") {
-  //         const dx = x - shape.cx;
-  //         const dy = y - shape.cy;
-  //         return Math.sqrt(dx * dx + dy * dy) <= shape.r;
-  //       } else if (shape.type === "text") {
-  //         return (
-  //           x >= shape.x &&
-  //           x <= shape.x + 100 && // perkiraan lebar teks
-  //           y >= shape.y - 20 &&
-  //           y <= shape.y
-  //         );
-  //       }
-  //       return false;
-  //     });
-
-  //     if (clickedShape) {
-  //       setIsDragging(true);
-  //       setSelectedShapeId(clickedShape.id);
-  //       setStartPoint({ x, y }); // simpan titik awal mouse
-  //     }
-
-  //     return; // ⛔ Jangan lanjut ke drawing
-  //   }
-
-  //   // 🧱 Drawing tool (rectangle/circle)
-  //   setStartPoint({ x, y });
-
-  //   if (activeTool === "rectangle") {
-  //     setIsDrawing(true);
-  //     setCurrentShape({
-  //       id: crypto.randomUUID(),
-  //       type: "rectangle",
-  //       x,
-  //       y,
-  //       width: 0,
-  //       height: 0,
-  //       fill: "transparent",
-  //       stroke: "black",
-  //       strokeWidth: 2,
-  //     });
-  //   } else if (activeTool === "circle") {
-  //     setIsDrawing(true);
-  //     setCurrentShape({
-  //       id: crypto.randomUUID(),
-  //       type: "circle",
-  //       cx: x,
-  //       cy: y,
-  //       r: 0,
-  //       fill: "transparent",
-  //       stroke: "black",
-  //       strokeWidth: 2,
-  //     });
-  //   }
-  // };
-
-  // const onMouseMoveCanvas = (e: React.MouseEvent) => {
-  //   handleMouseMove(e);
-
-  //   const { x, y } = getCoordinates(e);
-
-  //   // 🟡 MOVE TOOL
-  //   if (activeTool === "move" && selectedShapeId && startPoint) {
-  //     const dx = x - startPoint.x;
-  //     const dy = y - startPoint.y;
-
-  //     const shape = shapes.find((s) => s.id === selectedShapeId);
-  //     if (shape) {
-  //       let updated: CanvasShape;
-
-  //       if (shape.type === "rectangle") {
-  //         updated = { ...shape, x: shape.x + dx, y: shape.y + dy };
-  //       } else if (shape.type === "circle") {
-  //         updated = { ...shape, cx: shape.cx + dx, cy: shape.cy + dy };
-  //       } else if (shape.type === "text") {
-  //         updated = { ...shape, x: shape.x + dx, y: shape.y + dy };
-  //       } else {
-  //         updated = shape;
-  //       }
-
-  //       updateShape(updated.id, updated);
-
-  //       if (socket && isConnected) {
-  //         socket.emit("shape-update", {
-  //           boardId,
-  //           userId: currentUser.id,
-  //           id: updated.id,
-  //           updates: updated,
-  //         });
-  //       }
-
-  //       setStartPoint({ x, y });
-  //     }
-
-  //     return; // ⛔ keluar supaya tidak lanjut ke draw
-  //   }
-
-  //   // ⛔ Jika sedang tidak menggambar, berhenti di sini
-  //   if (!isDrawing || !startPoint || !currentShape || textInput) return;
-
-  //   // 🟢 DRAWING MODE
-  //   if (currentShape.type === "rectangle") {
-  //     const newShape = {
-  //       ...currentShape,
-  //       width: x - startPoint.x,
-  //       height: y - startPoint.y,
-  //     };
-  //     setCurrentShape(newShape);
-
-  //     if (socket && isConnected) {
-  //       socket.emit("shape-preview", {
-  //         boardId,
-  //         userId: currentUser.id,
-  //         shape: newShape,
-  //       });
-  //     }
-  //   } else if (currentShape.type === "circle") {
-  //     const dx = x - startPoint.x;
-  //     const dy = y - startPoint.y;
-  //     const newShape = {
-  //       ...currentShape,
-  //       r: Math.sqrt(dx * dx + dy * dy),
-  //     };
-  //     setCurrentShape(newShape);
-
-  //     if (socket && isConnected) {
-  //       socket.emit("shape-preview", {
-  //         boardId,
-  //         userId: currentUser.id,
-  //         shape: newShape,
-  //       });
-  //     }
-  //   }
-  // };
-
-  // const onMouseUp = async () => {
-  //   if (textInput) return;
-
-  //   if (isDragging) {
-  //     setIsDragging(false);
-  //     setDraggingShapeId(null);
-  //     setStartPoint(null);
-  //     return;
-  //   }
-
-  //   if (isDrawing && currentShape) {
-  //     let shouldSave = false;
-
-  //     if (
-  //       currentShape.type === "rectangle" &&
-  //       (Math.abs(currentShape.width) > 5 || Math.abs(currentShape.height) > 5)
-  //     ) {
-  //       shouldSave = true;
-  //     } else if (currentShape.type === "circle" && currentShape.r > 5) {
-  //       shouldSave = true;
-  //     }
-
-  //     if (activeTool === "move" && draggingShapeId) {
-  //       setDraggingShapeId(null);
-  //       setStartPoint(null);
-  //     }
-
-  //     if (shouldSave) {
-  //       try {
-  //         const saved = await saveShape(currentShape, boardId);
-  //         addShape(saved);
-
-  //         if (socket && isConnected) {
-  //           socket.emit("shape-add", {
-  //             boardId,
-  //             shape: saved,
-  //             userId: currentUser.id,
-  //           });
-  //         }
-  //       } catch (err) {
-  //         console.error("❌ Gagal simpan shape:", err);
-  //       }
-  //     }
-
-  //     // 🔥 Bersihkan preview saat mouse dilepas
-  //     setShapePreviews((prev) => {
-  //       const newMap = new Map(prev);
-  //       newMap.delete(currentUser.id); // hapus preview user ini
-  //       return newMap;
-  //     });
-
-  //     // Reset semua state terkait
-  //     setCurrentShape(null);
-  //     setStartPoint(null);
-  //     setIsDrawing(false);
-  //   }
-  // };
-
   return (
     <div
       ref={canvasRef}
-      className="relative w-full h-full bg-white overflow-scroll touch-none hide-scrollbar"
-      onMouseMove={handleMouseMove}
+      // className="relative w-full h-full bg-white overflow-scroll touch-none hide-scrollbar"
+      className="relative w-full h-screen bg-gray-50 overflow-hidden"
+      // className="fixed inset-0 bg-gray-50 overflow-hidden"
+      // className="relative w-full h-screen bg-gray-50 overflow-auto"
+      // onMouseMove={handleMouseMove}
+      // style={{
+
+      //   minWidth: "100%",
+      //   minHeight: "100%",
+      // }}
     >
+      {/* <Toolbar
+        activeTool={activeTool ?? "select"}
+        onToolChange={setActiveTool}
+      /> */}
+
+      {/* <SidebarLeft zoom={zoom} setZoom={setZoom} /> */}
+      {/* <SidebarRight /> */}
+      <StatusBar isConnected={isConnected} otherUsersCount={otherUsers.size} />
+
       {/* Connection status */}
-      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+      {/* <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
         <div
           className={`w-3 h-3 rounded-full ${
             isConnected ? "bg-green-500" : "bg-red-500"
@@ -1040,7 +1251,7 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
             +{otherUsers.size} user{otherUsers.size > 1 ? "s" : ""}
           </span>
         )}
-      </div>
+      </div> */}
 
       {/* Other users' cursors */}
       {Array.from(otherUsers.entries()).map(([userId, user]) => (
@@ -1098,16 +1309,21 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
       )}
 
       <svg
+        ref={svgRef}
         className="w-full h-full "
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMoveCanvas}
         onMouseUp={onMouseUp}
+        viewBox={`0 0 ${canvasSize} ${canvasSize}`}
         style={{
           backgroundColor: "#fff", // Bersih seperti Figma
           transform: `scale(${zoom})`,
-          transformOrigin: "top left",
+          transformOrigin: "0 0", // <- GANTI dari "top left" ke "0 0"
+          width: `${100 / zoom}%`,
+          height: `${100 / zoom}%`,
           pointerEvents: textInput ? "none" : "auto",
           zIndex: textInput ? 30 : 0,
+          cursor: activeTool === "eraser" ? "crosshair" : "default",
         }}
       >
         <defs>
@@ -1126,17 +1342,33 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
         <rect x="0" y="0" width="100%" height="100%" fill="url(#dot-pattern)" />
 
         {/* Render saved shapes */}
-        {uniqueSavedShapes.map((shape) => (
-          <Shape
-            key={`saved-${shape.type}-${shape.id}`}
-            shape={shape}
-            isSelected={
-              shape.id === selectedShapeId ||
-              selectedShapeIds.includes(shape.id)
-            }
-            onClick={() => !textInput && setSelectedShapeId(shape.id)}
-          />
-        ))}
+        {uniqueSavedShapes.map((shape) => {
+          if (shape.type === "pen") {
+            return (
+              <path
+                key={`pen-${shape.id}`}
+                d={shape.pathData} // gunakan pathData hasil smoothing
+                fill="none"
+                stroke={shape.stroke}
+                strokeWidth={shape.strokeWidth}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          }
+
+          return (
+            <Shape
+              key={`saved-${shape.type}-${shape.id}`}
+              shape={shape}
+              isSelected={
+                shape.id === selectedShapeId ||
+                selectedShapeIds.includes(shape.id)
+              }
+              onClick={() => !textInput && setSelectedShapeId(shape.id)}
+            />
+          );
+        })}
 
         {/* Render preview shapes from other users */}
         {Array.from(shapePreviews.values()).map((shape) => {
@@ -1197,14 +1429,20 @@ export default function Canvas({ boardId, currentUser }: CanvasProps) {
             )}
           </>
         )}
+        {/* PINDAHKAN pen path preview ke LUAR currentShape check: */}
+        {activeTool === "pen" && isDrawing && currentPenPath && (
+          <path
+            d={currentPenPath}
+            fill="none"
+            stroke={penColor}
+            strokeWidth={penType === "marker" ? 4 : 2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray="2,2"
+            opacity={0.7} // <- GANTI dari 10 ke 0.7
+          />
+        )}
       </svg>
-
-      {/* {Array.from(shapePreviews.values()).map((shape, index) => (
-        <Shape key={`preview-${index}`} shape={shape} isSelected={false} />
-      ))} */}
     </div>
   );
 }
-// function setIsResizing(arg0: boolean) {
-//   throw new Error("Function not implemented.");
-// }

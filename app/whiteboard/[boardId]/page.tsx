@@ -7,6 +7,7 @@ import Canvas from "@/components/whiteboard/Canvas";
 import Toolbar from "@/components/whiteboard/Toolbar";
 import { LoginModal } from "@/components/login/LoginModal";
 import { useUser } from "@/hooks/useUser";
+import { useSession } from "next-auth/react";
 
 export default function BoardPage() {
   const router = useRouter();
@@ -15,11 +16,12 @@ export default function BoardPage() {
 
   const boardId = params?.boardId as string;
   const usernameFromQuery = searchParams?.get("user");
-  const emailFromQuery = searchParams?.get("email") ?? undefined;
+  // const emailFromQuery = searchParams?.get("email") ?? undefined;
   const [boardTitle, setBoardTitle] = useState("Untitled Board");
 
   const { user, isLoading, login, logout, isAuthenticated } = useUser();
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const { data: session } = useSession();
 
   useEffect(() => {
     const fetchBoard = async () => {
@@ -49,7 +51,7 @@ export default function BoardPage() {
 
   const handleLogout = () => {
     logout();
-    router.push("/dashboard"); // ✅ arahkan ke dashboard
+    router.push("/whiteboard"); // ✅ arahkan ke dashboard
   };
 
   if (isLoading) {
@@ -81,11 +83,10 @@ export default function BoardPage() {
     );
   }
 
-  const currentUsername = usernameFromQuery || user?.username || "ゲスト";
-  const currentEmail = emailFromQuery || user?.email;
-  const currentUserId = `${currentUsername
-    .toLowerCase()
-    .replace(/\s+/g, "-")}-${Math.random().toString(36).slice(2, 6)}`;
+  const currentUsername =
+    session?.user?.username || usernameFromQuery || "ゲスト";
+  // const currentEmail = session?.user?.email || emailFromQuery;
+  const currentUserId = session?.user?.id; // kalau kamu masih butuh ID-nya
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -101,9 +102,9 @@ export default function BoardPage() {
             placeholder="Untitled Board"
           />
 
-          <span className="text-xs text-purple-600 bg-purple-100 rounded px-2 py-0.5 font-semibold">
+          {/* <span className="text-xs text-purple-600 bg-purple-100 rounded px-2 py-0.5 font-semibold">
             Free
-          </span>
+          </span> */}
         </div>
 
         {/* Kanan - Share & User */}
@@ -146,10 +147,10 @@ export default function BoardPage() {
           {user || usernameFromQuery ? (
             <Canvas
               boardId={boardId}
-              currentUser={{
-                id: currentUserId,
+              localUser={{
+                id: currentUserId ?? "",
                 username: currentUsername,
-                email: currentEmail,
+                // email: currentEmail,
               }}
             />
           ) : (

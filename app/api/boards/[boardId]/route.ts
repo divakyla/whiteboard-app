@@ -1,11 +1,11 @@
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
 
 export async function GET(
-  _req: Request,
-  { params }: { params: { boardId?: string } }
+  req: NextRequest,
+  context: { params: { boardId: string } }
 ) {
-  const boardId = params?.boardId;
+  const boardId = context.params.boardId;
   console.log("🧩 GET /api/boards/", boardId);
 
   if (!boardId || typeof boardId !== "string") {

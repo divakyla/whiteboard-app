@@ -33,4 +33,13 @@ export interface TextShape {
   strokeWidth?: number;
 }
 
-export type Shape = Rectangle | Circle | TextShape;
+export interface PenShape {
+  id: string;
+  type: "pen";
+  points: { x: number; y: number }[];
+  pathData: string;
+  stroke: string;
+  strokeWidth: number;
+}
+
+export type Shape = Rectangle | Circle | TextShape | PenShape;

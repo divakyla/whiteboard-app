@@ -1,44 +1,35 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
   try {
     const body = await req.json();
     const { boardId } = body;
 
     if (!boardId) {
       return NextResponse.json(
-        { error: "Board ID tidak ditemukan" },
+        { error: "Board ID wajib dikirim." },
         { status: 400 }
       );
     }
 
-    const board = await prisma.board.findUnique({
-      where: { id: boardId },
+    await prisma.sharedBoard.deleteMany({
+      where: { boardId },
     });
 
-    if (!board) {
-      return NextResponse.json(
-        { error: "Board tidak ditemukan" },
-        { status: 404 }
-      );
-    }
-
-    // 🔥 Hapus semua shape dulu
     await prisma.shape.deleteMany({
       where: { boardId },
     });
 
-    // 🔥 Baru hapus board-nya
     await prisma.board.delete({
       where: { id: boardId },
     });
 
-    return NextResponse.json({ success: true, boardId }, { status: 200 });
+    return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error("❌ Gagal menghapus board:", error);
     return NextResponse.json(
-      { error: "Terjadi kesalahan di server" },
+      { error: "Terjadi kesalahan di server saat menghapus board" },
       { status: 500 }
     );
   }
