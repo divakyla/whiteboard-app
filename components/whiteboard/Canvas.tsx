@@ -11,7 +11,13 @@ import { useUIStore } from "@/store/uiStore";
 // import type { Tool } from "@/store/uiStore";
 
 import { Wifi, WifiOff, Users } from "lucide-react";
-import { Rectangle, Circle, TextShape, PenShape } from "@/types/canvas";
+import {
+  Rectangle,
+  Circle,
+  TextShape,
+  PenShape,
+  ArrowShape,
+} from "@/types/canvas";
 import { useCanvasStore } from "@/store/canvasStore";
 import Shape from "@/components/whiteboard/elements/Shape";
 import { io, Socket } from "socket.io-client";
@@ -22,7 +28,7 @@ import { useSession } from "next-auth/react";
 // import Toolbar from "./Toolbar";
 
 type Point = { x: number; y: number };
-type CanvasShape = Rectangle | Circle | TextShape | PenShape;
+type CanvasShape = Rectangle | Circle | TextShape | PenShape | ArrowShape;
 
 // ✨ Smooth pen drawing utilities
 interface SmoothPoint extends Point {
@@ -230,9 +236,10 @@ export default function Canvas({ boardId }: CanvasProps) {
   );
   const [isConnected, setIsConnected] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const userColor = useRef(
-    localUser ? generateUserColor(localUser.id) : "#000"
-  );
+  const userColor = useMemo(() => {
+    return localUser ? generateUserColor(localUser.id) : "#000000";
+  }, [localUser]);
+
   const [shapePreviews, setShapePreviews] = useState<Map<string, CanvasShape>>(
     new Map()
   );
@@ -275,6 +282,7 @@ export default function Canvas({ boardId }: CanvasProps) {
   //   const canvasWidth = 1920;
   // const canvasHeight = 1080;
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
+  // const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
 
   // Set current user dari session
   useEffect(() => {
@@ -548,7 +556,7 @@ export default function Canvas({ boardId }: CanvasProps) {
         username: localUser.username,
         x,
         y,
-        color: userColor.current,
+        color: userColor,
       });
 
       // Debugging
@@ -560,7 +568,7 @@ export default function Canvas({ boardId }: CanvasProps) {
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [socket, localUser, boardId]);
+  }, [socket, localUser, boardId, userColor]);
 
   const saveShape = async (shape: CanvasShape, boardId: string) => {
     try {
@@ -709,6 +717,11 @@ export default function Canvas({ boardId }: CanvasProps) {
     };
 
     const { x, y } = mousePoint;
+
+    if (activeTool?.startsWith("arrow")) {
+      setStartPoint({ x, y });
+      return; // stop sampai sini untuk panah
+    }
 
     // 🖊️ ✨ Enhanced Pen Tool with smoothing
     if (activeTool === "pen") {
@@ -880,7 +893,7 @@ export default function Canvas({ boardId }: CanvasProps) {
         username: localUser.username,
         x,
         y,
-        color: userColor.current,
+        color: userColor,
       });
     }
     const { x, y } = getCoordinates(e);
@@ -1012,6 +1025,16 @@ export default function Canvas({ boardId }: CanvasProps) {
             updated = { ...shape, cx: shape.cx + dx, cy: shape.cy + dy };
           } else if (shape.type === "text") {
             updated = { ...shape, x: shape.x + dx, y: shape.y + dy };
+          } else if (
+            shape.type === "arrow-straight" ||
+            shape.type === "arrow-elbow" ||
+            shape.type === "arrow-curve"
+          ) {
+            updated = {
+              ...shape,
+              x: shape.x + dx,
+              y: shape.y + dy,
+            };
           }
         }
 
@@ -1070,8 +1093,49 @@ export default function Canvas({ boardId }: CanvasProps) {
     }
   };
 
-  const onMouseUp = async () => {
+  const onMouseUp = async (event: React.MouseEvent<SVGSVGElement>) => {
     if (textInput) return;
+
+    // 🏹 Arrow Tool Completion
+    if (activeTool?.startsWith("arrow") && startPoint) {
+      const svg = svgRef.current;
+      if (!svg) return;
+
+      const rect = svg.getBoundingClientRect();
+      const endX = (event.clientX - rect.left) / zoom;
+      const endY = (event.clientY - rect.top) / zoom;
+
+      const minX = Math.min(startPoint.x, endX);
+      const minY = Math.min(startPoint.y, endY);
+      const width = Math.abs(endX - startPoint.x);
+      const height = Math.abs(endY - startPoint.y);
+
+      const arrowShape: ArrowShape = {
+        id: generateUniqueId(),
+        type: activeTool as "arrow-straight" | "arrow-elbow" | "arrow-curve",
+        x: minX,
+        y: minY,
+        width,
+        height,
+        stroke: "black",
+        strokeWidth: 2,
+      };
+
+      try {
+        const saved = await saveShape(arrowShape, boardId);
+        addShape(saved);
+
+        if (socket && isConnected) {
+          socket.emit("shape-add", {
+            boardId,
+            shape: saved,
+            userId: localUser?.id,
+          });
+        }
+      } catch (err) {
+        console.error("❌ Gagal simpan arrow:", err);
+      }
+    }
 
     // ✨ Enhanced pen tool completion with path smoothing
     if (activeTool === "pen" && isDrawing) {
@@ -1338,6 +1402,17 @@ export default function Canvas({ boardId }: CanvasProps) {
             <circle cx="1" cy="1" r="1" fill="#e5e7eb" />{" "}
             {/* Tailwind gray-200 */}
           </pattern>
+          <marker
+            id="arrowhead"
+            markerWidth="10"
+            markerHeight="7"
+            refX="10"
+            refY="3.5"
+            orient="auto"
+            markerUnits="strokeWidth"
+          >
+            <polygon points="0 0, 10 3.5, 0 7" fill="black" />
+          </marker>
         </defs>
         <rect x="0" y="0" width="100%" height="100%" fill="url(#dot-pattern)" />
 

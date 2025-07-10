@@ -11,22 +11,27 @@ interface CursorProps {
 export default function Cursor({ x, y, username, color }: CursorProps) {
   return (
     <div
-      className="absolute z-50 transition-all duration-75 pointer-events-none"
-      style={{
-        transform: `translate(${x}px, ${y}px)`,
-      }}
+      className="absolute pointer-events-none z-40 transition-all duration-75"
+      style={{ left: x, top: y, transform: "translate(-2px, -2px)" }}
     >
-      <div className="flex flex-col items-center">
-        <div
-          className="w-4 h-4 rounded-full border-2"
-          style={{ backgroundColor: color, borderColor: "#ffffff" }}
-        ></div>
-        <span
-          className="text-xs font-medium mt-1 px-1 rounded"
-          style={{ backgroundColor: color, color: "#fff" }}
-        >
-          {username}
-        </span>
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 20 20"
+        className="drop-shadow-sm"
+      >
+        <path
+          d="M2 2L18 8L8 12L2 18L2 2Z"
+          fill={color}
+          stroke="white"
+          strokeWidth="1"
+        />
+      </svg>
+      <div
+        className="absolute left-5 top-0 px-2 py-1 text-xs text-white rounded-md whitespace-nowrap"
+        style={{ backgroundColor: color }}
+      >
+        {username}
       </div>
     </div>
   );

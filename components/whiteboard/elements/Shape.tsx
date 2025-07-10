@@ -268,7 +268,7 @@ export default function Shape({
     fill: "none",
     pointerEvents: "none" as const,
   };
-
+  console.log("🔍 Rendering shape:", shape);
   switch (shape.type) {
     case "rectangle":
       return (
@@ -360,6 +360,109 @@ export default function Shape({
           )}
         </g>
       );
+
+    // case "arrow-straight":
+    // case "arrow-elbow":
+    // case "arrow-curve": {
+    //   const x1 = shape.x ?? 0;
+    //   const y1 = shape.y ?? 0;
+    //   const x2 = (shape.x ?? 0) + (shape.width ?? 0);
+    //   const y2 = (shape.y ?? 0) + (shape.height ?? 0);
+
+    //   const markerEnd = "url(#arrowhead)";
+    //   const stroke = shape.stroke || "black";
+    //   const strokeWidth = shape.strokeWidth || 2;
+
+    //   if (shape.type === "arrow-elbow") {
+    //     return (
+    //       <>
+    //         <polyline
+    //           points={`${x1},${y1} ${x1},${y2} ${x2},${y2}`}
+    //           fill="none"
+    //           stroke={stroke}
+    //           strokeWidth={strokeWidth}
+    //           markerEnd={markerEnd}
+    //         />
+    //       </>
+    //     );
+    //   } else if (shape.type === "arrow-curve") {
+    //     const midX = (x1 + x2) / 2;
+    //     return (
+    //       <>
+    //         <path
+    //           d={`M${x1},${y1} Q${midX},${y1 - 40} ${x2},${y2}`}
+    //           fill="none"
+    //           stroke={stroke}
+    //           strokeWidth={strokeWidth}
+    //           markerEnd={markerEnd}
+    //         />
+    //       </>
+    //     );
+    //   } else {
+    //     return (
+    //       <>
+    //         <line
+    //           x1={x1}
+    //           y1={y1}
+    //           x2={x2}
+    //           y2={y2}
+    //           stroke={stroke}
+    //           strokeWidth={strokeWidth}
+    //           markerEnd={markerEnd}
+    //         />
+    //       </>
+    //     );
+    //   }
+    // }
+
+    case "arrow-straight":
+    case "arrow-elbow":
+    case "arrow-curve": {
+      const x = shape.x ?? 0;
+      const y = shape.y ?? 0;
+      const width = shape.width ?? 0;
+      const height = shape.height ?? 0;
+
+      const stroke = shape.stroke || "black";
+      const strokeWidth = shape.strokeWidth || 2;
+      const markerEnd = "url(#arrowhead)";
+
+      return (
+        <g transform={`translate(${x}, ${y})`}>
+          {shape.type === "arrow-straight" && (
+            <line
+              x1={0}
+              y1={0}
+              x2={width}
+              y2={height}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              markerEnd={markerEnd}
+            />
+          )}
+
+          {shape.type === "arrow-elbow" && (
+            <polyline
+              points={`0,0 0,${height} ${width},${height}`}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              markerEnd={markerEnd}
+            />
+          )}
+
+          {shape.type === "arrow-curve" && (
+            <path
+              d={`M0,0 Q${width / 2},${-40} ${width},${height}`}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              markerEnd={markerEnd}
+            />
+          )}
+        </g>
+      );
+    }
 
     default:
       return null;

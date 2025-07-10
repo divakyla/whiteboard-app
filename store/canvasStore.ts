@@ -22,6 +22,7 @@ interface CanvasState {
   setPenColor: (color: string) => void;
   penType: string;
   setPenType: (type: string) => void;
+  stampType: string;
 }
 
 export const useCanvasStore = create<CanvasState>((set) => ({
@@ -59,4 +60,5 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   setPenColor: (color) => set({ penColor: color }),
   penType: "default",
   setPenType: (type) => set({ penType: type }),
+  stampType: "⭐", // default emoji
 }));

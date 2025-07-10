@@ -7,7 +7,11 @@ export type Tool =
   | "circle"
   | "text"
   | "pen"
-  | "eraser";
+  | "eraser"
+  | "arrow-straight"
+  | "arrow-elbow"
+  | "arrow-curve"
+  | "stamp";
 
 interface UIState {
   activeTool: Tool | null;

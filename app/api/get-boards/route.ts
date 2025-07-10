@@ -20,9 +20,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { filter, currentUserId } = await req.json();
+    const { currentUserId } = await req.json();
 
-    if (!filter || !currentUserId) {
+    if (!currentUserId) {
       return NextResponse.json(
         { error: "Data tidak lengkap" },
         { status: 400 }
@@ -30,22 +30,28 @@ export async function POST(req: NextRequest) {
     }
 
     // ✅ Gunakan tipe aman & fleksibel
-    const whereClause: Record<string, unknown> = {
-      visibility: filter,
-    };
+    // const whereClause: Record<string, unknown> = {
+    //   visibility: filter,
+    // };
 
-    if (filter === "mine") {
-      whereClause.userId = currentUserId;
-    } else if (filter === "shared") {
-      whereClause.sharedWith = {
-        some: {
-          userId: currentUserId,
-        },
-      };
-    }
+    // if (filter === "mine") {
+    //   whereClause.userId = currentUserId;
+    // } else if (filter === "shared") {
+    //   whereClause.sharedWith = {
+    //     some: {
+    //       userId: currentUserId,
+    //     },
+    //   };
+    // }
 
     const boards = await prisma.board.findMany({
-      where: whereClause,
+      where: {
+        OR: [
+          { userId: currentUserId }, // boards milik user
+          { visibility: "public" }, // boards public
+          { sharedWith: { some: { userId: currentUserId } } }, // boards shared ke user
+        ],
+      },
       orderBy: { createdAt: "desc" },
       include: { sharedWith: true },
     });

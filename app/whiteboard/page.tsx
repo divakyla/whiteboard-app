@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 // import { Whiteboard as WhiteboardTypeBase } from "@/types/database";
 // import { LoginModal } from "@/components/login/LoginModal";
@@ -85,7 +85,7 @@ const WhiteboardPage = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             currentUserId: session.user.id,
-            filter,
+            // filter,
           }),
         });
 
@@ -105,7 +105,7 @@ const WhiteboardPage = () => {
     };
 
     fetchBoards();
-  }, [session, filter]);
+  }, [session]);
 
   // useEffect(() => {
   //   const userData = localStorage.getItem("canvas-user");
@@ -248,29 +248,7 @@ const WhiteboardPage = () => {
     );
   };
 
-  // Enhanced filtering logic
-  // const getFilteredBoards = () => {
-  //   if (searchTerm) {
-  //     return boards.filter((board) =>
-  //       board.title.toLowerCase().includes(searchTerm.toLowerCase())
-  //     );
-  //   }
-  //   return boards;
-  // };
-
-  // const filteredBoards = getFilteredBoards();
-
-  // const getFilterCounts = () => {
-  //   return {
-  //     mine: 0,
-  //     shared: 0,
-  //     public: 0,
-  //   };
-  // };
-
-  // const filterCounts = getFilterCounts();
-
-  const getFilterCounts = () => {
+  const filterCounts = useMemo(() => {
     if (!userId || boards.length === 0) {
       return { mine: 0, shared: 0, public: 0 };
     }
@@ -289,7 +267,7 @@ const WhiteboardPage = () => {
 
     console.log("📊 Updated Filter counts:", counts);
     return counts;
-  };
+  }, [boards, userId]);
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -314,7 +292,7 @@ const WhiteboardPage = () => {
       {/* Sidebar */}
       <div
         className={`fixed lg:relative top-0 left-0 h-screen z-40 transition-all duration-300 ease-in-out ${
-          sidebarOpen ? "w-80" : "w-0"
+          sidebarOpen ? "w-72 sm:w-80" : "w-0"
         } bg-white border-r border-gray-200 shadow-xl overflow-hidden lg:shadow-none`}
       >
         <div className="p-4 space-y-6 lg:p-8 lg:space-y-8">
@@ -348,8 +326,8 @@ const WhiteboardPage = () => {
                 description: "誰でもアクセスできるボード",
               },
             ].map(({ key, icon, label, description }) => {
-              const filterCounts = getFilterCounts();
               const count = filterCounts[key as keyof typeof filterCounts];
+              // const count = filterCounts[key as keyof typeof filterCounts];
               return (
                 <button
                   key={key}
@@ -413,9 +391,13 @@ const WhiteboardPage = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 p-4 lg:p-8 ml-0">
+      <div
+        className={`flex-1 p-4 lg:p-8 transition-all duration-300 ${
+          sidebarOpen ? "lg:ml-0" : "ml-0"
+        }`}
+      >
         {/* Header */}
-        <div className="text-center mb-8 lg:mb-12 mt-16 lg:mt-0">
+        <div className="text-center mb-8 lg:mb-12 mt-12 sm:mt-8 lg:mt-0">
           <h1 className="text-2xl md:text-4xl lg:text-6xl font-extrabold tracking-tight text-gray-900 mb-2 lg:mb-4">
             <span className="whitespace-nowrap">📋 ボード一覧</span>
           </h1>
@@ -429,7 +411,7 @@ const WhiteboardPage = () => {
         {/* Search and Create Section */}
         <div className="w-full max-w-6xl mx-auto px-4 lg:px-8 mb-8 lg:mb-12">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-8 lg:rounded-2xl">
-            <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-6 lg:items-end">
+            <div className="space-y-4 md:space-y-6 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-6 lg:items-end">
               {/* Search */}
               <div className="lg:col-span-1">
                 <label className="block text-sm font-medium text-gray-700 mb-2 lg:mb-3 whitespace-nowrap">
@@ -462,9 +444,9 @@ const WhiteboardPage = () => {
                   </div>
                 </div>
 
-                <div className="flex flex-col lg:grid lg:grid-cols-3 lg:gap-6 lg:items-end w-full">
+                <div className="flex flex-col space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 lg:grid-cols-3 lg:gap-6 lg:items-end w-full">
                   {/* Input Title */}
-                  <div className="lg:col-span-1">
+                  <div className="md:col-span-1 lg:col-span-1">
                     <input
                       value={newBoardTitle}
                       onChange={(e) => setNewBoardTitle(e.target.value)}
@@ -477,7 +459,7 @@ const WhiteboardPage = () => {
                   </div>
 
                   {/* Select Visibility */}
-                  <div className="lg:col-span-1 relative">
+                  <div className="lg:col-span-1 md:col-span-1 relative">
                     <select
                       value={boardVisibility}
                       onChange={(e) =>
@@ -509,7 +491,7 @@ const WhiteboardPage = () => {
                   </div>
 
                   {/* Create Button */}
-                  <div className="lg:col-span-1">
+                  <div className="md:col-span-2 lg:col-span-1">
                     <button
                       onClick={createBoard}
                       disabled={!newBoardTitle.trim() || isCreating}
@@ -619,7 +601,7 @@ const WhiteboardPage = () => {
 
         {/* Boards Grid */}
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 lg:gap-8">
             {filteredBoards.map((board) => (
               <div
                 key={board.id}

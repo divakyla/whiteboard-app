@@ -133,11 +133,11 @@ export default function BoardPage() {
       </header>
 
       {/* Body Layout */}
-      <div className="flex-1 flex flex-col md:flex-row h-[calc(100vh-64px)] overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row h-[calc(100vh-64px)] overflow-visible">
         {/* Toolbar - repositioned in top for mobile */}
         {/* Toolbar */}
-        <aside>
-          <div className="flex md:flex-col justify-center md:justify-start items-center gap-4 py-2 md:py-4 overflow-x-auto md:overflow-visible">
+        <aside className="relative z-[60] overflow-visible">
+          <div className="flex md:flex-col justify-center md:justify-start items-center gap-4 py-2 md:py-4">
             <Toolbar />
           </div>
         </aside>
