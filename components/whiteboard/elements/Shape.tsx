@@ -236,7 +236,12 @@
 //   }
 // }
 import React from "react";
-import { Shape as ShapeType } from "@/types/canvas";
+import {
+  ArrowCurveShape,
+  ArrowElbowShape,
+  ArrowStraightShape,
+  Shape as ShapeType,
+} from "@/types/canvas";
 
 interface ShapeProps {
   shape: ShapeType;
@@ -420,46 +425,26 @@ export default function Shape({
     case "arrow-curve": {
       const x = shape.x ?? 0;
       const y = shape.y ?? 0;
-      const width = shape.width ?? 0;
-      const height = shape.height ?? 0;
 
-      const stroke = shape.stroke || "black";
-      const strokeWidth = shape.strokeWidth || 2;
+      const arrowShape = shape as
+        | ArrowStraightShape
+        | ArrowElbowShape
+        | ArrowCurveShape;
+      const stroke = arrowShape.stroke || "black";
+      const strokeWidth = arrowShape.strokeWidth || 2;
       const markerEnd = "url(#arrowhead)";
+
+      const pathData = arrowShape.pathData;
 
       return (
         <g transform={`translate(${x}, ${y})`}>
-          {shape.type === "arrow-straight" && (
-            <line
-              x1={0}
-              y1={0}
-              x2={width}
-              y2={height}
-              stroke={stroke}
-              strokeWidth={strokeWidth}
-              markerEnd={markerEnd}
-            />
-          )}
-
-          {shape.type === "arrow-elbow" && (
-            <polyline
-              points={`0,0 0,${height} ${width},${height}`}
-              fill="none"
-              stroke={stroke}
-              strokeWidth={strokeWidth}
-              markerEnd={markerEnd}
-            />
-          )}
-
-          {shape.type === "arrow-curve" && (
-            <path
-              d={`M0,0 Q${width / 2},${-40} ${width},${height}`}
-              fill="none"
-              stroke={stroke}
-              strokeWidth={strokeWidth}
-              markerEnd={markerEnd}
-            />
-          )}
+          <path
+            d={pathData} // Semua jenis panah menggunakan pathData yang sama
+            fill="none"
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            markerEnd={markerEnd}
+          />
         </g>
       );
     }

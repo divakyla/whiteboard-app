@@ -16,7 +16,9 @@ import {
   Circle,
   TextShape,
   PenShape,
-  ArrowShape,
+  ArrowCurveShape,
+  ArrowElbowShape,
+  ArrowStraightShape,
 } from "@/types/canvas";
 import { useCanvasStore } from "@/store/canvasStore";
 import Shape from "@/components/whiteboard/elements/Shape";
@@ -24,11 +26,19 @@ import { io, Socket } from "socket.io-client";
 import Cursor from "@/components/whiteboard/Cursor";
 import { v4 as uuidv4 } from "uuid"; // ✅ Gunakan UUID unik untuk semua shape
 import { useSession } from "next-auth/react";
+import { isAnyArrowShape } from "@/lib/utils/shapeGuards";
 
 // import Toolbar from "./Toolbar";
 
 type Point = { x: number; y: number };
-type CanvasShape = Rectangle | Circle | TextShape | PenShape | ArrowShape;
+type CanvasShape =
+  | Rectangle
+  | Circle
+  | TextShape
+  | PenShape
+  | ArrowStraightShape
+  | ArrowElbowShape
+  | ArrowCurveShape;
 
 // ✨ Smooth pen drawing utilities
 interface SmoothPoint extends Point {
@@ -216,6 +226,50 @@ const StatusBar: React.FC<{
   </div>
 );
 
+// Fungsi untuk render arrow berdasarkan type
+const getArrowPathData = (
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  type: string
+): string => {
+  // Hitung koordinat relatif terhadap startX, startY
+  const relEndX = endX - startX;
+  const relEndY = endY - startY;
+
+  let pathData = "";
+
+  if (type === "arrow-straight") {
+    // Path untuk garis lurus: Mulai dari (0,0) relatif, berakhir di (relEndX, relEndY)
+    pathData = `M 0 0 L ${relEndX} ${relEndY}`;
+  } else if (type === "arrow-elbow") {
+    // Untuk siku: midX dan midY juga harus relatif
+    const relMidX = relEndX / 2;
+    // const relMidY = relEndY / 2; // ini tidak digunakan dalam contoh ini, tapi bisa berguna untuk elbow yang berbeda
+
+    // Asumsi elbow yang horizontal-then-vertical
+    // M 0 0 L relMidX 0 L relMidX relEndY L relEndX relEndY
+    pathData = `M 0 0 L ${relMidX} 0 L ${relMidX} ${relEndY} L ${relEndX} ${relEndY}`;
+
+    // Jika elbow yang vertical-then-horizontal, ini akan berbeda:
+    // pathData = `M 0 0 L 0 ${relMidY} L ${relEndX} ${relMidY} L ${relEndX} ${relEndY}`;
+  } else if (type === "arrow-curve") {
+    // Untuk kurva: control points juga harus relatif terhadap (0,0)
+    const relMidX = relEndX / 2;
+    const relMidY = relEndY / 2;
+    const dx = relEndX; // dx dan dy sudah relatif
+    const dy = relEndY;
+    const curveDirection = dy >= 0 ? 1 : -1;
+
+    const controlX = relMidX + curveDirection * Math.abs(dy) * 0.3;
+    const controlY = relMidY - curveDirection * Math.abs(dx) * 0.3;
+
+    pathData = `M 0 0 Q ${controlX} ${controlY} ${relEndX} ${relEndY}`;
+  }
+  return pathData;
+};
+
 export default function Canvas({ boardId }: CanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const { data: session } = useSession();
@@ -283,6 +337,25 @@ export default function Canvas({ boardId }: CanvasProps) {
   // const canvasHeight = 1080;
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
   // const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
+  const [currentArrowPreview, setCurrentArrowPreview] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    type: string;
+  } | null>(null);
+  const [otherUsersArrowPreviews, setOtherUsersArrowPreviews] = useState<
+    Map<
+      string,
+      {
+        startX: number;
+        startY: number;
+        endX: number;
+        endY: number;
+        type: string;
+      }
+    >
+  >(new Map());
 
   // Set current user dari session
   useEffect(() => {
@@ -461,6 +534,33 @@ export default function Canvas({ boardId }: CanvasProps) {
         setShapePreviews((prev) => {
           const map = new Map(prev);
           map.set(userId, shape);
+          return map;
+        });
+      }
+    });
+
+    // Tambahkan socket listeners untuk arrow preview (dalam useEffect socket)
+    socketInstance.on("arrow-preview", (data) => {
+      if (data.userId !== localUser?.id) {
+        setOtherUsersArrowPreviews((prev) => {
+          const map = new Map(prev);
+          map.set(data.userId, {
+            startX: data.startX,
+            startY: data.startY,
+            endX: data.endX,
+            endY: data.endY,
+            type: data.type,
+          });
+          return map;
+        });
+      }
+    });
+
+    socketInstance.on("arrow-preview-clear", (data) => {
+      if (data.userId !== localUser?.id) {
+        setOtherUsersArrowPreviews((prev) => {
+          const map = new Map(prev);
+          map.delete(data.userId);
           return map;
         });
       }
@@ -718,9 +818,19 @@ export default function Canvas({ boardId }: CanvasProps) {
 
     const { x, y } = mousePoint;
 
+    // 🏹 Arrow Tool - Start drawing dengan preview
     if (activeTool?.startsWith("arrow")) {
+      e.preventDefault();
+      setIsDrawing(true);
       setStartPoint({ x, y });
-      return; // stop sampai sini untuk panah
+      setCurrentArrowPreview({
+        startX: x,
+        startY: y,
+        endX: x,
+        endY: y,
+        type: activeTool,
+      });
+      return;
     }
 
     // 🖊️ ✨ Enhanced Pen Tool with smoothing
@@ -898,6 +1008,31 @@ export default function Canvas({ boardId }: CanvasProps) {
     }
     const { x, y } = getCoordinates(e);
 
+    // 🏹 Arrow Tool Preview - Update preview saat mouse move
+    if (activeTool?.startsWith("arrow") && isDrawing && startPoint) {
+      setCurrentArrowPreview({
+        startX: startPoint.x,
+        startY: startPoint.y,
+        endX: x,
+        endY: y,
+        type: activeTool,
+      });
+
+      // Emit arrow preview ke user lain
+      if (socket && isConnected) {
+        socket.emit("arrow-preview", {
+          boardId,
+          userId: localUser?.id,
+          startX: startPoint.x,
+          startY: startPoint.y,
+          endX: x,
+          endY: y,
+          type: activeTool,
+        });
+      }
+      return;
+    }
+
     if (activeTool === "move" && draggingShapeId) {
       setDraggingShapeId(null);
       setStartPoint(null);
@@ -973,12 +1108,12 @@ export default function Canvas({ boardId }: CanvasProps) {
           return shape.points?.some(
             (point) => Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2) < 10
           );
-        } else if (shape.type === "text") {
+        } else if (isAnyArrowShape(shape)) {
           return (
             x >= shape.x &&
-            x <= shape.x + 100 &&
-            y >= shape.y - 20 &&
-            y <= shape.y
+            x <= shape.x + shape.width &&
+            y >= shape.y &&
+            y <= shape.y + shape.height
           );
         }
         return false;
@@ -1025,16 +1160,16 @@ export default function Canvas({ boardId }: CanvasProps) {
             updated = { ...shape, cx: shape.cx + dx, cy: shape.cy + dy };
           } else if (shape.type === "text") {
             updated = { ...shape, x: shape.x + dx, y: shape.y + dy };
-          } else if (
-            shape.type === "arrow-straight" ||
-            shape.type === "arrow-elbow" ||
-            shape.type === "arrow-curve"
-          ) {
-            updated = {
-              ...shape,
-              x: shape.x + dx,
-              y: shape.y + dy,
-            };
+            // } else if (
+            //   shape.type === "arrow-straight" ||
+            //   shape.type === "arrow-elbow" ||
+            //   shape.type === "arrow-curve"
+            // ) {
+            //   updated = {
+            //     ...shape,
+            //     x: shape.x + dx,
+            //     y: shape.y + dy,
+            //   };
           }
         }
 
@@ -1082,6 +1217,14 @@ export default function Canvas({ boardId }: CanvasProps) {
         r: Math.sqrt(dx * dx + dy * dy),
       };
       setCurrentShape(newShape);
+    } else if (currentShape.type?.startsWith("arrow")) {
+      const newShape = {
+        ...currentShape,
+        // Hanya update x dan y endpoint
+        width: x - startPoint.x,
+        height: y - startPoint.y,
+      };
+      setCurrentShape(newShape);
 
       if (socket && isConnected) {
         socket.emit("shape-preview", {
@@ -1105,37 +1248,99 @@ export default function Canvas({ boardId }: CanvasProps) {
       const endX = (event.clientX - rect.left) / zoom;
       const endY = (event.clientY - rect.top) / zoom;
 
-      const minX = Math.min(startPoint.x, endX);
-      const minY = Math.min(startPoint.y, endY);
-      const width = Math.abs(endX - startPoint.x);
-      const height = Math.abs(endY - startPoint.y);
+      // Hitung panjang arrow untuk validasi minimum
+      const length = Math.sqrt(
+        Math.pow(endX - startPoint.x, 2) + Math.pow(endY - startPoint.y, 2)
+      );
 
-      const arrowShape: ArrowShape = {
-        id: generateUniqueId(),
-        type: activeTool as "arrow-straight" | "arrow-elbow" | "arrow-curve",
-        x: minX,
-        y: minY,
-        width,
-        height,
-        stroke: "black",
-        strokeWidth: 2,
-      };
+      // Hanya simpan jika arrow cukup panjang
+      if (length > 10) {
+        // Panggil getArrowPathData di sini untuk mendapatkan string path
+        const pathData = getArrowPathData(
+          startPoint.x,
+          startPoint.y,
+          endX,
+          endY,
+          activeTool // activeTool sudah memiliki nilai "arrow-straight", "arrow-elbow", atau "arrow-curve"
+        );
 
-      try {
-        const saved = await saveShape(arrowShape, boardId);
-        addShape(saved);
+        const arrowShape:
+          | ArrowStraightShape
+          | ArrowElbowShape
+          | ArrowCurveShape = {
+          id: generateUniqueId(),
+          type: activeTool as "arrow-straight" | "arrow-elbow" | "arrow-curve",
+          x: startPoint.x,
+          y: startPoint.y,
+          width: endX - startPoint.x,
+          height: endY - startPoint.y,
+          stroke: "black", // Sesuaikan dengan warna panah aktif jika ada
+          strokeWidth: 2, // Sesuaikan dengan ukuran panah aktif jika ada
+          pathData: pathData, // <-- MASUKKAN NILAI pathData DI SINI
+        };
 
-        if (socket && isConnected) {
-          socket.emit("shape-add", {
-            boardId,
-            shape: saved,
-            userId: localUser?.id,
-          });
+        try {
+          const saved = await saveShape(arrowShape, boardId);
+          addShape(saved);
+
+          if (socket && isConnected) {
+            socket.emit("shape-add", {
+              boardId,
+              shape: saved,
+              userId: localUser?.id,
+            });
+          }
+        } catch (err) {
+          console.error("❌ Gagal simpan arrow:", err);
         }
-      } catch (err) {
-        console.error("❌ Gagal simpan arrow:", err);
       }
+
+      // Reset arrow states
+      setIsDrawing(false);
+      setStartPoint(null);
+      setCurrentArrowPreview(null);
+
+      // Clear preview dari socket
+      if (socket && isConnected) {
+        socket.emit("arrow-preview-clear", {
+          boardId,
+          userId: localUser?.id,
+        });
+      }
+      return;
     }
+
+    //   const minX = Math.min(startPoint.x, endX);
+    //   const minY = Math.min(startPoint.y, endY);
+    //   const width = Math.abs(endX - startPoint.x);
+    //   const height = Math.abs(endY - startPoint.y);
+
+    //   const arrowShape: ArrowShape = {
+    //     id: generateUniqueId(),
+    //     type: activeTool as "arrow-straight" | "arrow-elbow" | "arrow-curve",
+    //     x: minX,
+    //     y: minY,
+    //     width,
+    //     height,
+    //     stroke: "black",
+    //     strokeWidth: 2,
+    //   };
+
+    //   try {
+    //     const saved = await saveShape(arrowShape, boardId);
+    //     addShape(saved);
+
+    //     if (socket && isConnected) {
+    //       socket.emit("shape-add", {
+    //         boardId,
+    //         shape: saved,
+    //         userId: localUser?.id,
+    //       });
+    //     }
+    //   } catch (err) {
+    //     console.error("❌ Gagal simpan arrow:", err);
+    //   }
+    // }
 
     // ✨ Enhanced pen tool completion with path smoothing
     if (activeTool === "pen" && isDrawing) {
@@ -1472,6 +1677,28 @@ export default function Canvas({ boardId }: CanvasProps) {
                 strokeDasharray="4 2"
               />
             );
+            // } else if (
+            //   shape.type === "arrow-straight" ||
+            //   shape.type === "arrow-elbow" ||
+            //   shape.type === "arrow-curve"
+            // ) {
+            //   const arrowShape = shape as ArrowShape;
+            //   const endX = arrowShape.x + (arrowShape.width || 0);
+            //   const endY = arrowShape.y + (arrowShape.height || 0);
+
+            //   return (
+            //     <line
+            //       key={`preview-arrow-${arrowShape.id}`}
+            //       x1={arrowShape.x}
+            //       y1={arrowShape.y}
+            //       x2={endX}
+            //       y2={endY}
+            //       stroke="gray"
+            //       strokeWidth={2}
+            //       strokeDasharray="4 2"
+            //       markerEnd="url(#arrowhead)"
+            //     />
+            //   );
           }
           return null;
         })}
@@ -1502,8 +1729,74 @@ export default function Canvas({ boardId }: CanvasProps) {
                 strokeWidth={2}
               />
             )}
+            {/* {currentShape.type?.startsWith("arrow") &&
+              "x" in currentShape &&
+              "y" in currentShape &&
+              "width" in currentShape &&
+              "height" in currentShape && (
+                <line
+                  x1={currentShape.x}
+                  y1={currentShape.y}
+                  x2={currentShape.x + (currentShape.width || 0)}
+                  y2={currentShape.y + (currentShape.height || 0)}
+                  stroke="blue"
+                  strokeDasharray="5,5"
+                  strokeWidth={2}
+                  markerEnd="url(#arrowhead)"
+                />
+              )} */}
           </>
         )}
+
+        {/* Render current arrow preview */}
+        {currentArrowPreview && (
+          <g
+            transform={`translate(${currentArrowPreview.startX}, ${currentArrowPreview.startY})`}
+          >
+            <path
+              d={getArrowPathData(
+                currentArrowPreview.startX,
+                currentArrowPreview.startY,
+                currentArrowPreview.endX,
+                currentArrowPreview.endY,
+                currentArrowPreview.type
+              )}
+              fill="none"
+              stroke="gray" // Gunakan warna panah yang aktif
+              strokeWidth={2} // Gunakan ukuran panah yang aktif
+              strokeDasharray="3,3" // Untuk pratinjau
+              markerEnd="url(#arrowhead)"
+              opacity={0.8}
+            />
+          </g>
+        )}
+
+        {/* Render other users' arrow previews */}
+        {Array.from(otherUsersArrowPreviews.entries()).map(
+          ([userId, preview]) => (
+            <g
+              key={`arrow-preview-${userId}`}
+              transform={`translate(${preview.startX}, ${preview.startY})`}
+            >
+              <path
+                d={getArrowPathData(
+                  preview.startX,
+                  preview.startY,
+                  preview.endX,
+                  preview.endY,
+                  preview.type
+                )}
+                fill="none"
+                stroke="blue" // Sesuaikan warna jika ada untuk user lain
+                strokeWidth={2} // Sesuaikan
+                strokeDasharray="3,3" // Sesuaikan
+                markerEnd="url(#arrowhead)"
+                opacity={0.8}
+              />
+            </g>
+          )
+        )}
+
         {/* PINDAHKAN pen path preview ke LUAR currentShape check: */}
         {activeTool === "pen" && isDrawing && currentPenPath && (
           <path
@@ -1521,3 +1814,6 @@ export default function Canvas({ boardId }: CanvasProps) {
     </div>
   );
 }
+// function isAnyArrowShape(shape: TextShape) {
+//   throw new Error("Function not implemented.");
+// }

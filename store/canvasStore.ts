@@ -1,7 +1,22 @@
 import { create } from "zustand";
-import { Rectangle, Circle, TextShape, PenShape } from "@/types/canvas";
+import {
+  Rectangle,
+  Circle,
+  TextShape,
+  PenShape,
+  ArrowCurveShape,
+  ArrowElbowShape,
+  ArrowStraightShape,
+} from "@/types/canvas";
 
-type Shape = Rectangle | Circle | TextShape | PenShape;
+type Shape =
+  | Rectangle
+  | Circle
+  | TextShape
+  | PenShape
+  | ArrowCurveShape
+  | ArrowElbowShape
+  | ArrowStraightShape;
 
 interface CanvasState {
   shapes: Shape[];

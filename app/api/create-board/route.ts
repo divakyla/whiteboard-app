@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
-    const { title, userId, visibility } = await req.json();
+    const { title, userId, visibility, sharedWith } = await req.json();
 
     if (!title || !userId) {
       return NextResponse.json(
@@ -12,28 +12,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Buat board utama
+    // 1️⃣ Buat board utama
     const newBoard = await prisma.board.create({
       data: {
         title,
         userId,
         isPublic: visibility === "public",
-        visibility, // Add the required visibility property
+        visibility, // "mine" | "team" | "public"
       },
     });
-    console.log("🧪 Data diterima:", title, userId, visibility);
 
-    // Jika board tipe "shared", tambahkan ke tabel SharedBoard
-    if (visibility === "shared") {
-      await prisma.sharedBoard.create({
-        data: {
+    console.log("✅ Board dibuat:", newBoard.id, title);
+
+    // 2️⃣ Kalau board tipe "team", tambahkan anggota tim ke SharedBoard
+    if (visibility === "team") {
+      // ✅ gabungkan owner + member (hapus duplikat pakai Set)
+      const allMembers = Array.from(new Set([userId, ...(sharedWith || [])]));
+
+      await prisma.sharedBoard.createMany({
+        data: allMembers.map((uid) => ({
           boardId: newBoard.id,
-          userId: userId,
-        },
+          userId: uid, // ✅ owner ikut tersimpan
+        })),
       });
     }
+    // 3️⃣ Hitung collaborators: owner + anggota tim
+    const collaboratorsCount =
+      visibility === "team" && Array.isArray(sharedWith)
+        ? sharedWith.length + 1
+        : 1;
 
-    return NextResponse.json(newBoard, { status: 201 });
+    // 4️⃣ Response ke frontend → langsung kirim sharedWith + collaborators
+    return NextResponse.json(
+      {
+        ...newBoard,
+        sharedWith: sharedWith || [],
+        collaborators: collaboratorsCount,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("❌ Gagal membuat board:", error);
     return NextResponse.json({ error: "Gagal membuat board" }, { status: 500 });

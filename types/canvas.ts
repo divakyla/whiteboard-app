@@ -42,9 +42,9 @@ export interface PenShape {
   strokeWidth: number;
 }
 
-export interface ArrowShape {
+export interface ArrowStraightShape {
   id: string;
-  type: "arrow-straight" | "arrow-elbow" | "arrow-curve";
+  type: "arrow-straight";
   x: number;
   y: number;
   width: number;
@@ -52,29 +52,32 @@ export interface ArrowShape {
   stroke?: string;
   rotation?: number;
   strokeWidth?: number;
+  pathData: string;
 }
 
-// export interface ArrowElbowShape {
-//   id: string;
-//   type: "arrow-elbow";
-//   x: number;
-//   y: number;
-//   width: number;
-//   height: number;
-//   stroke: string;
-//   strokeWidth: number;
-// }
+export interface ArrowElbowShape {
+  id: string;
+  type: "arrow-elbow";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  stroke: string;
+  strokeWidth: number;
+  pathData: string;
+}
 
-// export interface ArrowCurveShape {
-//   id: string;
-//   type: "arrow-curve";
-//   x: number;
-//   y: number;
-//   width: number;
-//   height: number;
-//   stroke: string;
-//   strokeWidth: number;
-// }
+export interface ArrowCurveShape {
+  id: string;
+  type: "arrow-curve";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  stroke: string;
+  strokeWidth: number;
+  pathData: string;
+}
 
 export interface StampShape {
   id: string;
@@ -90,5 +93,7 @@ export type Shape =
   | Circle
   | TextShape
   | PenShape
-  | ArrowShape
+  | ArrowCurveShape
+  | ArrowElbowShape
+  | ArrowStraightShape
   | StampShape;

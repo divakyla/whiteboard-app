@@ -24,39 +24,85 @@ export async function POST(req: NextRequest) {
 
     if (!currentUserId) {
       return NextResponse.json(
-        { error: "Data tidak lengkap" },
+        { error: "currentUserId wajib diisi" },
         { status: 400 }
       );
     }
 
-    // ✅ Gunakan tipe aman & fleksibel
-    // const whereClause: Record<string, unknown> = {
-    //   visibility: filter,
-    // };
-
-    // if (filter === "mine") {
-    //   whereClause.userId = currentUserId;
-    // } else if (filter === "shared") {
-    //   whereClause.sharedWith = {
-    //     some: {
-    //       userId: currentUserId,
-    //     },
-    //   };
-    // }
-
+    // 1️⃣ Ambil semua boards yang bisa diakses user
     const boards = await prisma.board.findMany({
       where: {
         OR: [
-          { userId: currentUserId }, // boards milik user
-          { visibility: "public" }, // boards public
-          { sharedWith: { some: { userId: currentUserId } } }, // boards shared ke user
+          { userId: currentUserId }, // pemilik
+          { visibility: "public" }, // publik
+          {
+            id: {
+              in: (
+                await prisma.sharedBoard.findMany({
+                  where: { userId: currentUserId },
+                  select: { boardId: true },
+                })
+              ).map((sb) => sb.boardId),
+            },
+          },
         ],
       },
       orderBy: { createdAt: "desc" },
-      include: { sharedWith: true },
     });
 
-    return NextResponse.json(boards);
+    // Kalau tidak ada board → langsung return []
+    if (boards.length === 0) return NextResponse.json([], { status: 200 });
+
+    // 2️⃣ Ambil semua anggota team dari SharedBoard
+    const sharedMembers = await prisma.sharedBoard.findMany({
+      where: { boardId: { in: boards.map((b) => b.id) } },
+      select: { boardId: true, userId: true },
+    });
+
+    // 3️⃣ Kelompokkan anggota berdasarkan boardId
+    const sharedMap = new Map<string, string[]>();
+    for (const s of sharedMembers) {
+      if (!sharedMap.has(s.boardId)) sharedMap.set(s.boardId, []);
+      sharedMap.get(s.boardId)!.push(s.userId);
+    }
+
+    // 4️⃣ Mapping hasil akhir
+    // const mapped = boards.map((board) => {
+    //   const sharedWith = sharedMap.get(board.id) || [];
+    //   return {
+    //     id: board.id,
+    //     title: board.title,
+    //     userId: board.userId,
+    //     createdAt: board.createdAt,
+    //     sharedWith, // daftar anggota team
+    //     collaborators: sharedWith.length + 1, // owner + anggota tim
+    //     visibility:
+    //       board.visibility === "team"
+    //         ? "team" // ✅ biarkan tetap team
+    //         : board.userId === currentUserId
+    //         ? "mine"
+    //         : board.visibility === "public"
+    //         ? "public"
+    //         : "mine", // fallback
+    //   };
+    // });
+
+    const mapped = boards.map((board) => {
+      const sharedWith = (sharedMap.get(board.id) || []).map((uid) => ({
+        userId: uid,
+      }));
+      return {
+        ...board,
+        sharedWith, // ✅ sekarang bentuknya [{ userId }]
+        collaborators: sharedWith.length,
+        visibility: board.visibility, // harus tetap "team"
+      };
+    });
+
+    console.log("✅ Total boards:", mapped.length);
+
+    // ✅ Return hasil yang sudah lengkap
+    return NextResponse.json(mapped, { status: 200 });
   } catch (error) {
     console.error("❌ Gagal ambil boards:", error);
     return NextResponse.json(
