@@ -10,3 +10,25 @@ export type Whiteboard = {
   isPublic?: boolean;
   sharedWith?: string[];
 };
+
+export interface Users {
+  id: string;
+  username: string;
+  email: string;
+  email2: string;
+  password: string;
+  confirmPassword: string;
+  fullName: string;
+  fullNameKana: string;
+  employeeId: string;
+  department: string;
+  position: string;
+  employmentType: string;
+  role: string;
+  phone: string;
+  phone2: string;
+  remark: string;
+  profilePic: string;
+  tags: string[];
+  updatedAt: string;
+}
