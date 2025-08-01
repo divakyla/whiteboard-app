@@ -23,19 +23,26 @@ export async function POST(req: NextRequest) {
     });
 
     console.log("✅ Board dibuat:", newBoard.id, title);
-
     // 2️⃣ Kalau board tipe "team", tambahkan anggota tim ke SharedBoard
     if (visibility === "team") {
-      // ✅ gabungkan owner + member (hapus duplikat pakai Set)
-      const allMembers = Array.from(new Set([userId, ...(sharedWith || [])]));
+      // ✅ Perbaikan: Memastikan sharedWith adalah array string
+      const validSharedWith = Array.isArray(sharedWith)
+        ? sharedWith.filter((item) => typeof item === "string")
+        : [];
 
-      await prisma.sharedBoard.createMany({
-        data: allMembers.map((uid) => ({
-          boardId: newBoard.id,
-          userId: uid, // ✅ owner ikut tersimpan
-        })),
-      });
+      const allMembers = Array.from(new Set([...validSharedWith, userId])); // Menambahkan owner secara eksplisit
+      console.log("DEBUG: All members to be added:", allMembers);
+
+      if (allMembers.length > 0) {
+        await prisma.sharedBoard.createMany({
+          data: allMembers.map((uid) => ({
+            boardId: newBoard.id,
+            userId: uid,
+          })),
+        });
+      }
     }
+
     // 3️⃣ Hitung collaborators: owner + anggota tim
     const collaboratorsCount =
       visibility === "team" && Array.isArray(sharedWith)

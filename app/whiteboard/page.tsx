@@ -5,12 +5,21 @@ import { useRouter } from "next/navigation";
 // import { Whiteboard as WhiteboardTypeBase } from "@/types/database";
 // import { LoginModal } from "@/components/login/LoginModal";
 import { useSession } from "next-auth/react";
-import { Building2, Search, Plus, Minus, GripVertical } from "lucide-react"; // Import icons
+import {
+  Building2,
+  Search,
+  Plus,
+  Minus,
+  GripVertical,
+  Home,
+} from "lucide-react"; // Import icons
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { DepartmentTree } from "@/components/departments/DepartmentsTree"; // Sesuaikan path
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Socket } from "socket.io-client"; // sesuaikan dengan path file socket kamu
+
 import {
   Select,
   SelectContent,
@@ -78,6 +87,7 @@ const WhiteboardPage = () => {
     "mine" | "team" | "public"
   >("mine");
   const { data: session } = useSession();
+  const [socket, setSocket] = useState<Socket | null>(null);
   const userId = session?.user?.id; // 🎯 Ini sudah tersedia!
   const filteredBoards = boards.filter((board) => {
     const matchesSearch = board.title
@@ -384,6 +394,20 @@ const WhiteboardPage = () => {
         setNewBoardTitle("");
         setSelectedUserIds([]);
       }
+      if (
+        boardVisibility === "team" &&
+        selectedUserIds.length > 0 &&
+        socket &&
+        socket.connected
+      ) {
+        selectedUserIds.forEach((targetUserId) => {
+          socket.emit("team-add", {
+            targetUserId,
+            addedBy: session?.user?.username || "誰か",
+            boardId: data.id,
+          });
+        });
+      }
     } catch (err) {
       console.error("Create failed", err);
     } finally {
@@ -552,7 +576,6 @@ const WhiteboardPage = () => {
           onClick={() => setSidebarOpen(false)}
         />
       )}
-
       {/* Sidebar Toggle (all screens) */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -674,13 +697,13 @@ const WhiteboardPage = () => {
 
       {/* Main Content */}
       <div
-        className={`flex-1 transition-all duration-300 ease-in-out p-4 sm:p-6 lg:p-8
+        className={`flex-1 transition-all duration-300 ease-in-out p-2 sm:p-4 lg:p-6
           ${sidebarOpen ? "lg:ml-80" : "lg:ml-0"}`}
       >
         {/* Header */}
         <div className="text-center mb-8 lg:mb-12 mt-12 sm:mt-8 lg:mt-0">
           <h1 className="text-2xl md:text-4xl lg:text-6xl font-extrabold tracking-tight text-gray-900 mb-2 lg:mb-4">
-            <span className="whitespace-nowrap">📋 ボード一覧</span>
+            <span className="whitespace-nowrap">ボード一覧</span>
           </h1>
           <p className="text-gray-600 text-sm md:text-lg lg:text-xl font-medium">
             <span className="whitespace-nowrap">
@@ -690,11 +713,11 @@ const WhiteboardPage = () => {
         </div>
 
         {/* Search and Create Section */}
-        <div className="w-full max-w-7xl mx-auto px-6 lg:px-12 mb-12 lg:mb-16">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 lg:p-12">
-            <div className="space-y-10">
+        <div className="w-full max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 mb-12 lg:mb-8">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 lg:p-4">
+            <div className="space-y-4">
               {/* Search */}
-              <div className="space-y-6 md:grid md:grid-cols-2 md:gap-10 md:space-y-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">
                     🔍 ボード検索
@@ -702,11 +725,11 @@ const WhiteboardPage = () => {
                   <div className="relative">
                     <input
                       placeholder="ボード名を入力..."
-                      className="w-full h-14 border border-gray-300 rounded-xl px-5 text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
+                      className="w-full h-10 border border-gray-300 rounded-xl px-5 text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
-                    <div className="absolute right-3 top-3 text-gray-400">
+                    <div className="absolute right-2 top-2 text-gray-400">
                       🔍
                     </div>
                   </div>
@@ -714,14 +737,14 @@ const WhiteboardPage = () => {
               </div>
 
               {/* Create New Board */}
-              <div className="border-t border-gray-200 pt-10 mt-8">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">
+              <div className="border-t border-gray-200 pt-2 mt-2">
+                <h3 className="text-l font-semibold text-gray-800 mb-4">
                   ✨ 新しいボードを作成
                 </h3>
 
                 <div className="space-y-4">
                   {/* Title and Visibility */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-3">
                         ボードタイトル
@@ -733,7 +756,7 @@ const WhiteboardPage = () => {
                           if (e.key === "Enter") createBoard();
                         }}
                         placeholder="ボードタイトルを入力"
-                        className="w-full h-14 border border-gray-300 rounded-xl px-5 text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
+                        className="w-full h-10 border border-gray-300 rounded-xl px-5 text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-200"
                       />
                     </div>
 
@@ -749,7 +772,7 @@ const WhiteboardPage = () => {
                               e.target.value as "mine" | "team" | "public"
                             )
                           }
-                          className="w-full h-14 border border-gray-300 rounded-xl px-5 text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none appearance-none bg-white"
+                          className="w-full h-10 border border-gray-300 rounded-xl px-5 text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none appearance-none bg-white"
                         >
                           <option value="mine">👤 自分のボード</option>
                           <option value="team">🔒 チームボード</option>
@@ -775,9 +798,9 @@ const WhiteboardPage = () => {
                   </div>{" "}
                   {/* Team Member Selection for Team Boards */}
                   {boardVisibility === "team" && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 pt-8 mt-6 border-t border-gray-200">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 pt-8 mt-6 border-t border-gray-200 items-start">
                       {/* Left Side - User Selection */}
-                      <div className="space-y-4">
+                      <div className="space-y-4 min-h-[500px]">
                         <div className="flex flex-col sm:flex-row gap-3">
                           {/* Department Select */}
                           <div className="flex-1">
@@ -788,15 +811,16 @@ const WhiteboardPage = () => {
                               value={selectedDepartment}
                               onValueChange={setSelectedDepartment}
                             >
-                              <SelectTrigger className="h-10 w-full">
+                              <SelectTrigger className="h-12 w-full border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
                                 <SelectValue placeholder="部署を選択" />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="max-h-60 overflow-y-auto z-50 bg-white shadow-lg border border-gray-200 rounded-lg">
                                 <SelectItem value="ALL">全ての部署</SelectItem>
                                 {allDepartment.map((dept) => (
                                   <SelectItem
                                     key={dept.department_id ?? ""}
                                     value={dept.department_id ?? ""}
+                                    className="truncate"
                                   >
                                     {dept.department_name}
                                   </SelectItem>
@@ -814,7 +838,7 @@ const WhiteboardPage = () => {
                               <Input
                                 type="search"
                                 placeholder="ユーザー名を検索..."
-                                className="pl-10 h-10 w-full"
+                                className="pl-10 h-12 w-full border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={searchTerm}
                                 onChange={handleSearchChange}
                               />
@@ -836,7 +860,7 @@ const WhiteboardPage = () => {
                                 <div className="col-span-4">役職</div>
                               </div>
                             </div>
-                            <div className="max-h-60 overflow-y-auto">
+                            <div className="max-h-72 overflow-y-auto">
                               {filteredUsers && filteredUsers.length === 0 ? (
                                 <div className="text-sm text-gray-500 px-4 py-8 text-center">
                                   <div className="text-gray-400 text-2xl mb-2">
@@ -848,7 +872,7 @@ const WhiteboardPage = () => {
                                 filteredUsers.map((user) => (
                                   <div
                                     key={user.id}
-                                    className="grid grid-cols-12 gap-2 p-3 border-b border-gray-100 hover:bg-gray-50 items-center transition-colors duration-150"
+                                    className="grid grid-cols-12 gap-2 p-3 border-b border-gray-100 hover:bg-gray-50 items-center transition-colors duration-150 min-h-[60px]"
                                   >
                                     <div className="col-span-1 flex justify-center">
                                       <Button
@@ -892,112 +916,139 @@ const WhiteboardPage = () => {
                       </div>
 
                       {/* Right Side - Selected Users */}
-                      <div className="space-y-4">
-                        <Label className="text-sm font-medium text-gray-700 mb-3 block">
-                          選択されたメンバー
-                          <span className="ml-2 text-xs text-gray-500">
-                            (ドラッグで順序変更可能)
-                          </span>
-                        </Label>
-                        <div className="border rounded-lg overflow-hidden bg-white">
-                          <div className="bg-blue-50 border-b border-blue-200">
-                            <div className="grid grid-cols-12 gap-2 p-3 font-semibold text-sm text-blue-800">
-                              <div className="col-span-1 text-center">順序</div>
-                              <div className="col-span-1"></div>
-                              <div className="col-span-6">ユーザー名</div>
-                              <div className="col-span-3">役職</div>
-                              <div className="col-span-1 text-center">削除</div>
+                      <div className="space-y-4 min-h-[500px]">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          {/* Search Input */}
+                          <div className="flex-1">
+                            <Label className="block text-sm font-medium text-gray-700 mb-3">
+                              ユーザー検索
+                            </Label>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                              <Input
+                                type="search"
+                                placeholder="ユーザー名を検索..."
+                                className="pl-10 h-12 w-full"
+                                value={searchTerm}
+                                onChange={handleSearchChange}
+                              />
                             </div>
                           </div>
-                          <div className="max-h-60 overflow-y-auto">
-                            {selectedUsers.length === 0 ? (
-                              <div className="p-8 text-center text-gray-500">
-                                <div className="text-gray-400 text-3xl mb-3">
-                                  👥
+                        </div>
+
+                        <div>
+                          <Label className="text-sm font-medium text-gray-700 mb-3 block">
+                            選択されたメンバー
+                            <span className="ml-2 text-xs text-gray-500">
+                              (ドラッグで順序変更可能)
+                            </span>
+                          </Label>
+                          <div className="border rounded-lg overflow-hidden bg-white ">
+                            <div className="bg-blue-50 border-b border-blue-200">
+                              <div className="grid grid-cols-12 gap-2 p-3 font-semibold text-sm text-blue-800">
+                                <div className="col-span-1 text-center">
+                                  順序
                                 </div>
-                                <div className="text-sm">
-                                  ユーザーが選択されていません
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  左側からユーザーを追加してください
+                                <div className="col-span-1"></div>
+                                <div className="col-span-6">ユーザー名</div>
+                                <div className="col-span-3">役職</div>
+                                <div className="col-span-1 text-center">
+                                  削除
                                 </div>
                               </div>
-                            ) : (
-                              <DragDropContext
-                                onDragEnd={handleSelectedUsersDragEnd}
-                              >
-                                <Droppable droppableId="selected-users">
-                                  {(provided) => (
-                                    <div
-                                      {...provided.droppableProps}
-                                      ref={provided.innerRef}
-                                    >
-                                      {selectedUsers.map((user, index) => (
-                                        <Draggable
-                                          key={user.id}
-                                          draggableId={user.id}
-                                          index={index}
-                                        >
-                                          {(provided, snapshot) => (
-                                            <div
-                                              ref={provided.innerRef}
-                                              {...provided.draggableProps}
-                                              className={`grid grid-cols-12 gap-2 p-3 border-b border-gray-100 items-center transition-all duration-200 ${
-                                                snapshot.isDragging
-                                                  ? "bg-blue-50 shadow-lg border-blue-200 rounded-md"
-                                                  : "hover:bg-gray-50"
-                                              }`}
-                                            >
-                                              <div className="col-span-1 flex justify-center">
-                                                <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                                                  {index + 1}
+                            </div>
+                            <div className="max-h-60 overflow-y-auto">
+                              {selectedUsers.length === 0 ? (
+                                <div className="p-8 text-center text-gray-500">
+                                  <div className="text-gray-400 text-3xl mb-3">
+                                    👥
+                                  </div>
+                                  <div className="text-sm">
+                                    ユーザーが選択されていません
+                                  </div>
+                                  <div className="text-xs text-gray-400 mt-1">
+                                    左側からユーザーを追加してください
+                                  </div>
+                                </div>
+                              ) : (
+                                <DragDropContext
+                                  onDragEnd={handleSelectedUsersDragEnd}
+                                >
+                                  <Droppable droppableId="selected-users">
+                                    {(provided) => (
+                                      <div
+                                        {...provided.droppableProps}
+                                        ref={provided.innerRef}
+                                      >
+                                        {selectedUsers.map((user, index) => (
+                                          <Draggable
+                                            key={user.id}
+                                            draggableId={user.id}
+                                            index={index}
+                                          >
+                                            {(provided, snapshot) => (
+                                              <div
+                                                ref={provided.innerRef}
+                                                {...provided.draggableProps}
+                                                className={`grid grid-cols-12 gap-2 p-3 border-b border-gray-100 items-center transition-all duration-200 ${
+                                                  snapshot.isDragging
+                                                    ? "bg-blue-50 shadow-lg border-blue-200 rounded-md"
+                                                    : "hover:bg-gray-50"
+                                                }`}
+                                              >
+                                                <div className="col-span-1 flex justify-center">
+                                                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                                    {index + 1}
+                                                  </div>
                                                 </div>
-                                              </div>
-                                              <div className="col-span-1 flex justify-center">
-                                                <div
-                                                  {...provided.dragHandleProps}
-                                                  className="cursor-move p-1 hover:bg-gray-200 rounded transition-colors duration-150"
-                                                >
-                                                  <GripVertical className="h-4 w-4 text-gray-400" />
+                                                <div className="col-span-1 flex justify-center">
+                                                  <div
+                                                    {...provided.dragHandleProps}
+                                                    className="cursor-move p-1 hover:bg-gray-200 rounded transition-colors duration-150"
+                                                  >
+                                                    <GripVertical className="h-4 w-4 text-gray-400" />
+                                                  </div>
                                                 </div>
-                                              </div>
-                                              <div className="col-span-6">
-                                                <div className="text-sm font-medium text-gray-900">
-                                                  {user.username}
+                                                <div className="col-span-6">
+                                                  <div className="text-sm font-medium text-gray-900">
+                                                    {user.username}
+                                                  </div>
+                                                  <div className="text-xs text-gray-500">
+                                                    {user.department}
+                                                  </div>
                                                 </div>
-                                                <div className="text-xs text-gray-500">
-                                                  {user.department}
+                                                <div className="col-span-3 text-sm text-gray-600 truncate">
+                                                  {user.position}
                                                 </div>
-                                              </div>
-                                              <div className="col-span-3 text-sm text-gray-600 truncate">
-                                                {user.position}
-                                              </div>
-                                              <div className="col-span-1 flex justify-center">
-                                                <Button
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
-                                                  onClick={() =>
-                                                    setSelectedUserIds((prev) =>
-                                                      prev.filter(
-                                                        (id) => id !== user.id
+                                                <div className="col-span-1 flex justify-center">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
+                                                    onClick={() =>
+                                                      setSelectedUserIds(
+                                                        (prev) =>
+                                                          prev.filter(
+                                                            (id) =>
+                                                              id !== user.id
+                                                          )
                                                       )
-                                                    )
-                                                  }
-                                                >
-                                                  <Minus className="h-4 w-4" />
-                                                </Button>
+                                                    }
+                                                  >
+                                                    <Minus className="h-4 w-4" />
+                                                  </Button>
+                                                </div>
                                               </div>
-                                            </div>
-                                          )}
-                                        </Draggable>
-                                      ))}
-                                      {provided.placeholder}
-                                    </div>
-                                  )}
-                                </Droppable>
-                              </DragDropContext>
-                            )}
+                                            )}
+                                          </Draggable>
+                                        ))}
+                                        {provided.placeholder}
+                                      </div>
+                                    )}
+                                  </Droppable>
+                                </DragDropContext>
+                              )}
+                            </div>
                           </div>
                         </div>
                         {selectedUsers.length > 0 && (
@@ -1009,7 +1060,7 @@ const WhiteboardPage = () => {
                     </div>
                   )}
                   {/* Create Button */}
-                  <div className="flex justify-end pt-8 mt-8 border-t border-gray-200">
+                  <div className="flex justify-end pt-2 mt-2 border-t border-gray-200">
                     <button
                       onClick={createBoard}
                       disabled={!newBoardTitle.trim() || isCreating}
@@ -1038,7 +1089,12 @@ const WhiteboardPage = () => {
               {filteredBoards.map((board) => (
                 <div
                   key={board.id}
-                  onClick={() => handleClickBoard(board.id)}
+                  onClick={
+                    // Jika board saat ini sedang dalam mode edit (editingBoardId cocok dengan board.id ini)
+                    editingBoardId === board.id
+                      ? (e) => e.stopPropagation() // Maka, hentikan propagasi event klik di sini.
+                      : () => handleClickBoard(board.id) // Jika tidak dalam mode edit, lakukan navigasi seperti biasa.
+                  }
                   className="bg-white rounded-2xl shadow-md hover:shadow-xl border border-gray-200 cursor-pointer group transition-all duration-300 hover:-translate-y-1 relative p-6 h-[160px]"
                 >
                   {/* Favorite Star Badge */}
@@ -1145,6 +1201,7 @@ const WhiteboardPage = () => {
                               value={editedTitle}
                               onChange={(e) => setEditedTitle(e.target.value)}
                               onKeyDown={(e) => {
+                                e.stopPropagation();
                                 if (e.key === "Enter")
                                   handleRenameBoard(board.id);
                               }}
@@ -1152,13 +1209,21 @@ const WhiteboardPage = () => {
                             />
                             <div className="flex gap-2">
                               <button
-                                onClick={() => handleRenameBoard(board.id)}
+                                onClick={(e) => {
+                                  // PERBAIKAN: Hentikan propagasi event klik
+                                  e.stopPropagation(); //
+                                  handleRenameBoard(board.id);
+                                }}
                                 className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
                               >
                                 保存
                               </button>
                               <button
-                                onClick={() => setEditingBoardId(null)}
+                                onClick={(e) => {
+                                  // PERBAIKAN: Hentikan propagasi event klik
+                                  e.stopPropagation(); //
+                                  setEditingBoardId(null);
+                                }}
                                 className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-300"
                               >
                                 キャンセル
@@ -1193,82 +1258,80 @@ const WhiteboardPage = () => {
                             </span>
                           ) : null}
                         </div>
-
                         {/* Footer - Avatars and Date */}
                         <div className="flex justify-between items-center">
                           {/* Left - Team Members */}
                           <div className="flex items-center">
-                            {board.visibility === "team" &&
-                            board.sharedWith &&
-                            board.sharedWith.length > 0 ? (
-                              <div className="flex -space-x-2">
-                                {/* Owner Avatar */}
+                            {board.visibility === "team" ? ( // Hanya tampilkan jika visibility adalah "team"
+                              board.sharedWith &&
+                              board.sharedWith.length > 0 ? (
+                                <div className="flex -space-x-2">
+                                  {/* Owner Avatar */}
+                                  <div
+                                    className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm z-10"
+                                    title={board.owner?.username || "Owner"}
+                                  >
+                                    {(board.owner?.username || "U")
+                                      .charAt(0)
+                                      .toUpperCase()}
+                                  </div>
+
+                                  {/* Collaborators */}
+                                  {board.sharedWith
+                                    .slice(0, 4)
+                                    .map((member, index) => {
+                                      const user = users.find(
+                                        (u) => u.id === member.userId
+                                      );
+                                      const initial = (user?.username || "U")
+                                        .charAt(0)
+                                        .toUpperCase();
+                                      const colors = [
+                                        "from-emerald-500 to-teal-600",
+                                        "from-orange-500 to-red-600",
+                                        "from-pink-500 to-purple-600",
+                                        "from-indigo-500 to-blue-600",
+                                      ];
+
+                                      return (
+                                        <div
+                                          key={member.userId}
+                                          className={`w-8 h-8 rounded-full bg-gradient-to-br ${
+                                            colors[index % colors.length]
+                                          } flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm`}
+                                          style={{ zIndex: 9 - index }}
+                                          title={user?.username || "Member"}
+                                        >
+                                          {initial}
+                                        </div>
+                                      );
+                                    })}
+
+                                  {/* +N indicator, hanya muncul jika visibility adalah team dan sharedWith.length > 4 */}
+                                  {board.sharedWith.length > 4 && (
+                                    <div
+                                      className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm"
+                                      title={`+${
+                                        board.sharedWith.length - 4
+                                      } more`}
+                                    >
+                                      +{board.sharedWith.length - 4}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                // Jika sharedWith kosong atau tidak ada untuk team board, tampilkan hanya owner
                                 <div
-                                  className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm z-10"
+                                  className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-sm"
                                   title={board.owner?.username || "Owner"}
                                 >
                                   {(board.owner?.username || "U")
                                     .charAt(0)
                                     .toUpperCase()}
                                 </div>
-
-                                {/* Collaborators */}
-                                {board.sharedWith
-                                  .slice(0, 4)
-                                  .map((member, index) => {
-                                    const user = users.find(
-                                      (u) => u.id === member.userId
-                                    );
-                                    const initial = (user?.username || "U")
-                                      .charAt(0)
-                                      .toUpperCase();
-                                    const colors = [
-                                      "from-emerald-500 to-teal-600",
-                                      "from-orange-500 to-red-600",
-                                      "from-pink-500 to-purple-600",
-                                      "from-indigo-500 to-blue-600",
-                                    ];
-
-                                    return (
-                                      <div
-                                        key={member.userId}
-                                        className={`w-8 h-8 rounded-full bg-gradient-to-br ${
-                                          colors[index % colors.length]
-                                        } flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm`}
-                                        style={{ zIndex: 9 - index }}
-                                        title={user?.username || "Member"}
-                                      >
-                                        {initial}
-                                      </div>
-                                    );
-                                  })}
-
-                                {/* +N indicator */}
-                                {board.sharedWith.length > 4 && (
-                                  <div
-                                    className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm"
-                                    title={`+${
-                                      board.sharedWith.length - 4
-                                    } more`}
-                                  >
-                                    +{board.sharedWith.length - 4}
-                                  </div>
-                                )}
-                              </div>
-                            ) : board.visibility === "mine" ? (
-                              <div
-                                className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-sm"
-                                title={board.owner?.username || "Owner"}
-                              >
-                                {(board.owner?.username || "U")
-                                  .charAt(0)
-                                  .toUpperCase()}
-                              </div>
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                                🌐
-                              </div>
-                            )}
+                              )
+                            ) : null}{" "}
+                            {/* Ini adalah penutup untuk kondisi board.visibility === "team" */}
                           </div>
 
                           {/* Right - Date */}

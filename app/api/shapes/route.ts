@@ -81,6 +81,29 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const boardId = searchParams.get("boardId");
+
+  if (!boardId) {
+    return NextResponse.json({ message: "Missing boardId" }, { status: 400 });
+  }
+
+  try {
+    await prisma.shape.deleteMany({
+      where: { boardId },
+    });
+
+    return NextResponse.json({ message: "All shapes deleted" });
+  } catch (error) {
+    console.error("❌ Error deleting all shapes:", error);
+    return NextResponse.json(
+      { message: "Failed to delete shapes" },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE /api/shapes?id=...
 // export async function DELETE(req: NextRequest) {
 //   const { searchParams } = new URL(req.url);

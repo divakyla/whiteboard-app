@@ -35,11 +35,15 @@ const flowOptions = [
   { id: "arrow-curve", icon: RotateCw, label: "Curved" },
 ];
 
-export default function Toolbar() {
+type ToolbarProps = {
+  svgRef: React.RefObject<SVGSVGElement | null>;
+};
+
+export default function Toolbar({ svgRef }: ToolbarProps) {
   const activeTool = useUIStore((s) => s.activeTool);
   const setActiveTool = useUIStore((s) => s.setActiveTool);
-  const selectedShapeId = useCanvasStore((s) => s.selectedShapeId);
-  const deleteShape = useCanvasStore((s) => s.deleteShape);
+  // const selectedShapeId = useCanvasStore((s) => s.selectedShapeId);
+  // const deleteShape = useCanvasStore((s) => s.deleteShape);
   const zoomLevel = useCanvasStore((s) => s.zoom);
   const setZoom = useCanvasStore((s) => s.setZoom);
   const penColor = useCanvasStore((s) => s.penColor);
@@ -49,16 +53,15 @@ export default function Toolbar() {
 
   const [showPenOptions, setShowPenOptions] = useState(false);
   const [showFlowOptions, setShowFlowOptions] = useState(false);
+  const triggerClearAll = useCanvasStore((s) => s.triggerClearAll);
 
   const zoom = (delta: number) => {
     const nextZoom = Math.min(2, Math.max(0.2, zoomLevel + delta));
     setZoom(nextZoom);
   };
 
-  const handleDelete = () => {
-    if (selectedShapeId && deleteShape) {
-      deleteShape(selectedShapeId);
-    }
+  const handleClearAll = () => {
+    triggerClearAll(); // 📢 Cukup ini saja
   };
 
   const handleToolClick = (toolId: Tool) => {
@@ -141,7 +144,7 @@ export default function Toolbar() {
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
         <button
-          onClick={handleDelete}
+          onClick={handleClearAll}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-100 transition-colors"
           title="Delete"
         >
@@ -173,6 +176,10 @@ export default function Toolbar() {
                 onClick={() => {
                   setPenType(type as "default" | "marker");
                   setShowPenOptions(false);
+                  setActiveTool("pen"); // ✅ paksa aktifkan pen tool
+                  requestAnimationFrame(() => {
+                    svgRef.current?.dispatchEvent(new MouseEvent("mousemove"));
+                  });
                 }}
                 className={`px-3 py-1 text-sm rounded ${
                   penType === type

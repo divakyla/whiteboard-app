@@ -24,7 +24,9 @@ interface CanvasState {
   removeShape: (id: string) => void;
   updateShape: (id: string, updates: Partial<Shape>) => void;
   setShapes: (shapes: Shape[]) => void;
-  clearShapes: () => void;
+  clearAllShapes: () => void;
+  clearAllShapesRequest: boolean;
+  triggerClearAll: () => void;
 
   selectedShapeId: string | null;
   setSelectedShapeId: (id: string | null) => void;
@@ -65,6 +67,9 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
   setShapes: (shapes) => set({ shapes }),
   clearShapes: () => set({ shapes: [] }),
+  clearAllShapes: () => set({ shapes: [] }),
+  clearAllShapesRequest: false,
+  triggerClearAll: () => set({ clearAllShapesRequest: true }),
 
   selectedShapeId: null,
   setSelectedShapeId: (id) => set({ selectedShapeId: id }),

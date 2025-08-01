@@ -7,6 +7,7 @@ import React, {
   useRef,
   useMemo,
 } from "react";
+import debounce from "lodash.debounce";
 import { useUIStore } from "@/store/uiStore";
 // import type { Tool } from "@/store/uiStore";
 
@@ -113,6 +114,35 @@ class PenSmoother {
     return smoothed;
   }
 
+  getPathDataFromPoints(pointsToSmooth: SmoothPoint[]): string {
+    if (pointsToSmooth.length < 2) return "";
+
+    let path = `M ${pointsToSmooth[0].x} ${pointsToSmooth[0].y}`;
+
+    if (pointsToSmooth.length === 2) {
+      path += ` L ${pointsToSmooth[1].x} ${pointsToSmooth[1].y}`;
+      return path;
+    }
+
+    for (let i = 1; i < pointsToSmooth.length - 1; i++) {
+      const curr = pointsToSmooth[i];
+      const next = pointsToSmooth[i + 1];
+
+      const cpX = curr.x;
+      const cpY = curr.y;
+
+      const endX = (curr.x + next.x) / 2;
+      const endY = (curr.y + next.y) / 2;
+
+      path += ` Q ${cpX} ${cpY} ${endX} ${endY}`;
+    }
+
+    const lastPoint = pointsToSmooth[pointsToSmooth.length - 1];
+    path += ` L ${lastPoint.x} ${lastPoint.y}`;
+
+    return path;
+  }
+
   // Convert points to SVG path for even smoother curves
   getPathData(): string {
     const points = this.getSmoothedPoints();
@@ -175,6 +205,7 @@ interface CanvasProps {
     username: string;
     email?: string;
   };
+  svgRef: React.RefObject<SVGSVGElement | null>;
 }
 
 // Generate random color for user cursor
@@ -270,8 +301,8 @@ const getArrowPathData = (
   return pathData;
 };
 
-export default function Canvas({ boardId }: CanvasProps) {
-  const svgRef = useRef<SVGSVGElement>(null);
+export default function Canvas({ boardId, svgRef }: CanvasProps) {
+  // const svgRef = useRef<SVGSVGElement>(null);
   const { data: session } = useSession();
   const [localUser, setLocalUser] = useState<{
     id: string;
@@ -319,6 +350,9 @@ export default function Canvas({ boardId }: CanvasProps) {
   const setShapes = useCanvasStore((state) => state.setShapes);
   const updateShape = useCanvasStore((state) => state.updateShape);
   const removeShape = useCanvasStore((state) => state.removeShape);
+  const clearAllShapesRequest = useCanvasStore((s) => s.clearAllShapesRequest);
+  const clearAllShapes = useCanvasStore((s) => s.clearAllShapes);
+
   const [isDragging, setIsDragging] = useState(false);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -442,6 +476,27 @@ export default function Canvas({ boardId }: CanvasProps) {
     return () => window.removeEventListener("wheel", handleWheel);
   }, [zoom, setZoom]);
 
+  useEffect(() => {
+    if (clearAllShapesRequest) {
+      const clear = async () => {
+        await fetch(`/api/shapes?boardId=${boardId}`, { method: "DELETE" });
+        clearAllShapes();
+        if (socket && isConnected) {
+          socket.emit("clear-all", { boardId, userId: localUser });
+        }
+      };
+      clear();
+      useCanvasStore.setState({ clearAllShapesRequest: false }); // reset trigger
+    }
+  }, [
+    clearAllShapesRequest,
+    clearAllShapes,
+    boardId,
+    socket,
+    isConnected,
+    localUser,
+  ]);
+
   // Initialize Socket.IO connection
   useEffect(() => {
     if (!boardId || !localUser?.id || !localUser?.username) return;
@@ -539,6 +594,11 @@ export default function Canvas({ boardId }: CanvasProps) {
       }
     });
 
+    socketInstance.on("clear-all", ({ userId }) => {
+      console.log(`🧹 Semua shape dihapus oleh ${userId}`);
+      setShapes([]);
+    });
+
     // Tambahkan socket listeners untuk arrow preview (dalam useEffect socket)
     socketInstance.on("arrow-preview", (data) => {
       if (data.userId !== localUser?.id) {
@@ -587,6 +647,7 @@ export default function Canvas({ boardId }: CanvasProps) {
     addShape,
     updateShape,
     removeShape,
+    setShapes,
   ]);
 
   // Clean up inactive users
@@ -668,7 +729,7 @@ export default function Canvas({ boardId }: CanvasProps) {
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [socket, localUser, boardId, userColor]);
+  }, [socket, localUser, boardId, userColor, svgRef]);
 
   const saveShape = async (shape: CanvasShape, boardId: string) => {
     try {
@@ -755,6 +816,20 @@ export default function Canvas({ boardId }: CanvasProps) {
   useEffect(() => {
     fetchShapes();
   }, [fetchShapes]);
+
+  const updateShaped = useRef(
+    debounce(async (id: string, updates: Partial<CanvasShape>) => {
+      try {
+        await fetch(`/api/shapes/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ updates }),
+        });
+      } catch (err) {
+        console.error("Gagal update shape realtime:", err);
+      }
+    }, 300) // ⏱️ delay 300ms setelah user berhenti drag
+  ).current;
 
   const handleTextInput = async (value: string, position: Point) => {
     if (!value.trim()) return;
@@ -883,6 +958,13 @@ export default function Canvas({ boardId }: CanvasProps) {
             y >= shape.y - 20 &&
             y <= shape.y
           );
+        } else if (isAnyArrowShape(shape)) {
+          return (
+            x >= shape.x &&
+            x <= shape.x + shape.width &&
+            y >= shape.y &&
+            y <= shape.y + shape.height
+          );
         }
         return false;
       });
@@ -925,6 +1007,29 @@ export default function Canvas({ boardId }: CanvasProps) {
             x <= shape.x + 100 &&
             y >= shape.y - 20 &&
             y <= shape.y
+          );
+        } else if (shape.type === "pen") {
+          return shape.points?.some(
+            (point) => Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2) < 10
+          );
+        } else if (isAnyArrowShape(shape)) {
+          const arrowX1 = shape.x;
+          const arrowY1 = shape.y;
+          const arrowX2 = shape.x + shape.width;
+          const arrowY2 = shape.y + shape.height;
+
+          const minArrowX = Math.min(arrowX1, arrowX2);
+          const maxArrowX = Math.max(arrowX1, arrowX2);
+          const minArrowY = Math.min(arrowY1, arrowY2);
+          const maxArrowY = Math.max(arrowY1, arrowY2);
+
+          // Tambahkan toleransi kecil untuk klik
+          const tolerance = 10;
+          return (
+            x >= minArrowX - tolerance &&
+            x <= maxArrowX + tolerance &&
+            y >= minArrowY - tolerance &&
+            y <= maxArrowY + tolerance
           );
         }
         return false;
@@ -1160,16 +1265,35 @@ export default function Canvas({ boardId }: CanvasProps) {
             updated = { ...shape, cx: shape.cx + dx, cy: shape.cy + dy };
           } else if (shape.type === "text") {
             updated = { ...shape, x: shape.x + dx, y: shape.y + dy };
-            // } else if (
-            //   shape.type === "arrow-straight" ||
-            //   shape.type === "arrow-elbow" ||
-            //   shape.type === "arrow-curve"
-            // ) {
-            //   updated = {
-            //     ...shape,
-            //     x: shape.x + dx,
-            //     y: shape.y + dy,
-            //   };
+          } else if (shape.type === "pen") {
+            // Logic move untuk PenShape
+            // Gerakkan setiap titik di dalam array points
+            updated = {
+              ...shape,
+              points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+              // Perbarui pathData berdasarkan titik-titik baru
+              pathData: penSmoother.current.getPathDataFromPoints(
+                shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy }))
+              ),
+            } as PenShape; // Cast untuk memastikan tipe benar
+          } else if (isAnyArrowShape(shape)) {
+            // Logic move untuk ArrowShape
+            // Gerakkan start dan end point
+            updated = {
+              ...shape,
+              x: shape.x + dx,
+              y: shape.y + dy,
+              width: shape.width, // Biarkan width/height tetap relatif terhadap start baru
+              height: shape.height,
+              // Perbarui pathData berdasarkan titik-titik baru relatif
+              pathData: getArrowPathData(
+                shape.x + dx,
+                shape.y + dy,
+                shape.x + shape.width + dx, // End X baru
+                shape.y + shape.height + dy, // End Y baru
+                shape.type
+              ),
+            } as ArrowStraightShape | ArrowElbowShape | ArrowCurveShape;
           }
         }
 
@@ -1430,6 +1554,24 @@ export default function Canvas({ boardId }: CanvasProps) {
 
     // 🟨 Selesai drag/resize
     if (isDragging || isResizing) {
+      const shape = shapes.find((s) => s.id === selectedShapeId);
+      if (shape) {
+        try {
+          await updateShaped(shape.id, shape); // <--- Simpan perubahan posisi ke server
+
+          if (socket && isConnected) {
+            socket.emit("shape-update", {
+              boardId,
+              userId: localUser?.id,
+              id: shape.id,
+              updates: shape,
+            });
+          }
+        } catch (err) {
+          console.error("❌ Gagal simpan shape setelah move:", err);
+        }
+      }
+
       setIsDragging(false);
       setIsResizing(false);
       setDraggingShapeId(null);

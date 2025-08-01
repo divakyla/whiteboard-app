@@ -1,7 +1,7 @@
 // app/whiteboard/[boardId]/page.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Canvas from "@/components/whiteboard/Canvas";
 import Toolbar from "@/components/whiteboard/Toolbar";
@@ -13,6 +13,7 @@ export default function BoardPage() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
+  const svgRef = useRef<SVGSVGElement>(null);
 
   const boardId = params?.boardId as string;
   const usernameFromQuery = searchParams?.get("user");
@@ -138,7 +139,7 @@ export default function BoardPage() {
         {/* Toolbar */}
         <aside className="relative z-[60] overflow-visible">
           <div className="flex md:flex-col justify-center md:justify-start items-center gap-4 py-2 md:py-4">
-            <Toolbar />
+            <Toolbar svgRef={svgRef} />
           </div>
         </aside>
 
@@ -147,10 +148,10 @@ export default function BoardPage() {
           {user || usernameFromQuery ? (
             <Canvas
               boardId={boardId}
+              svgRef={svgRef}
               localUser={{
                 id: currentUserId ?? "",
                 username: currentUsername,
-                // email: currentEmail,
               }}
             />
           ) : (

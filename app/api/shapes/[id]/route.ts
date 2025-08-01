@@ -41,3 +41,26 @@ export async function DELETE(
     );
   }
 }
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+    const { updates } = await req.json();
+
+    const updatedShape = await prisma.shape.update({
+      where: { id },
+      data: updates,
+    });
+
+    return NextResponse.json(updatedShape);
+  } catch (error) {
+    console.error("❌ Failed to update shape:", error);
+    return NextResponse.json(
+      { message: "Failed to update shape" },
+      { status: 500 }
+    );
+  }
+}
