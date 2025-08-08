@@ -110,9 +110,9 @@ export default function BoardPage() {
 
         {/* Kanan - Share & User */}
         <div className="flex items-center gap-3">
-          <button className="bg-purple-600 text-white text-sm px-4 py-1.5 rounded hover:bg-purple-700 font-medium">
+          {/* <button className="bg-purple-600 text-white text-sm px-4 py-1.5 rounded hover:bg-purple-700 font-medium">
             Share
-          </button>
+          </button> */}
 
           {(user || usernameFromQuery) && (
             <div className="flex items-center gap-2">

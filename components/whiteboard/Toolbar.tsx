@@ -20,19 +20,19 @@ import { useUIStore, type Tool } from "@/store/uiStore";
 import { useCanvasStore } from "@/store/canvasStore";
 
 const baseTools = [
-  { id: "select", icon: MousePointer, label: "Select" },
-  { id: "move", icon: Move, label: "Move" },
-  { id: "rectangle", icon: Square, label: "Rectangle" },
-  { id: "circle", icon: Circle, label: "Circle" },
-  { id: "text", icon: Type, label: "Text" },
-  { id: "pen", icon: Pencil, label: "Pen" },
-  { id: "eraser", icon: Eraser, label: "Eraser" },
+  { id: "select", icon: MousePointer, label: "選択" },
+  { id: "move", icon: Move, label: "移動" },
+  { id: "rectangle", icon: Square, label: "四角" },
+  { id: "circle", icon: Circle, label: "丸" },
+  { id: "text", icon: Type, label: "文字" },
+  { id: "pen", icon: Pencil, label: "ペン" },
+  { id: "eraser", icon: Eraser, label: "消しゴム" },
 ];
 
 const flowOptions = [
-  { id: "arrow-straight", icon: ArrowRight, label: "Straight" },
-  { id: "arrow-elbow", icon: CornerDownRight, label: "Elbow" },
-  { id: "arrow-curve", icon: RotateCw, label: "Curved" },
+  { id: "arrow-straight", icon: ArrowRight, label: "直線" },
+  { id: "arrow-elbow", icon: CornerDownRight, label: "エルボー" },
+  { id: "arrow-curve", icon: RotateCw, label: "曲線" },
 ];
 
 type ToolbarProps = {
@@ -103,7 +103,7 @@ export default function Toolbar({ svgRef }: ToolbarProps) {
                 ? "bg-purple-500 text-white"
                 : "text-gray-600 hover:bg-gray-100"
             }`}
-            title="Flow Tools"
+            title="図形描画ツール"
           >
             <ArrowRight size={20} />
           </button>
@@ -146,7 +146,7 @@ export default function Toolbar({ svgRef }: ToolbarProps) {
         <button
           onClick={handleClearAll}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-100 transition-colors"
-          title="Delete"
+          title="削除"
         >
           <Trash2 size={20} />
         </button>
@@ -155,14 +155,14 @@ export default function Toolbar({ svgRef }: ToolbarProps) {
           <button
             onClick={() => zoom(-0.1)}
             className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-gray-100 text-gray-600"
-            title="Zoom Out"
+            title="拡大"
           >
             <ZoomOut size={20} />
           </button>
           <button
             onClick={() => zoom(0.1)}
             className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-gray-100 text-gray-600"
-            title="Zoom In"
+            title="縮小"
           >
             <ZoomIn size={20} />
           </button>
