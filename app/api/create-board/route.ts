@@ -23,14 +23,20 @@ export async function POST(req: NextRequest) {
     });
 
     console.log("✅ Board dibuat:", newBoard.id, title);
-    // 2️⃣ Kalau board tipe "team", tambahkan anggota tim ke SharedBoard
+
+    // // 2️⃣ Kalau board tipe "team", tambahkan anggota tim ke SharedBoard
     if (visibility === "team") {
-      // ✅ Perbaikan: Memastikan sharedWith adalah array string
+      //   // ✅ Perbaikan: Memastikan sharedWith adalah array string
       const validSharedWith = Array.isArray(sharedWith)
         ? sharedWith.filter((item) => typeof item === "string")
         : [];
 
-      const allMembers = Array.from(new Set([...validSharedWith, userId])); // Menambahkan owner secara eksplisit
+      // Memastikan owner tidak ada di array sharedWith
+      const membersWithoutOwner = validSharedWith.filter(
+        (memberId) => memberId !== userId
+      );
+
+      const allMembers = Array.from(new Set([...membersWithoutOwner, userId])); // Menambahkan owner secara eksplisit di akhir
       console.log("DEBUG: All members to be added:", allMembers);
 
       if (allMembers.length > 0) {

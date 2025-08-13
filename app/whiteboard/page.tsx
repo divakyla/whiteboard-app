@@ -1267,17 +1267,21 @@ const WhiteboardPage = () => {
                               board.sharedWith.length > 0 ? (
                                 <div className="flex -space-x-2">
                                   {/* Owner Avatar */}
-                                  <div
+                                  {/* <div
                                     className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm z-10"
                                     title={board.owner?.username || "Owner"}
                                   >
                                     {(board.owner?.username || "U")
                                       .charAt(0)
                                       .toUpperCase()}
-                                  </div>
+                                  </div> */}
 
                                   {/* Collaborators */}
                                   {board.sharedWith
+                                    .filter(
+                                      (member) =>
+                                        member.userId !== board.owner?.username
+                                    ) // Filter owner
                                     .slice(0, 4)
                                     .map((member, index) => {
                                       const user = users.find(
@@ -1308,14 +1312,26 @@ const WhiteboardPage = () => {
                                     })}
 
                                   {/* +N indicator, hanya muncul jika visibility adalah team dan sharedWith.length > 4 */}
-                                  {board.sharedWith.length > 4 && (
+                                  {board.sharedWith.filter(
+                                    (member) =>
+                                      member.userId !== board.owner?.username
+                                  ).length > 4 && (
                                     <div
                                       className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm"
                                       title={`+${
-                                        board.sharedWith.length - 4
+                                        board.sharedWith.filter(
+                                          (member) =>
+                                            member.userId !==
+                                            board.owner?.username
+                                        ).length - 4
                                       } more`}
                                     >
-                                      +{board.sharedWith.length - 4}
+                                      +
+                                      {board.sharedWith.filter(
+                                        (member) =>
+                                          member.userId !==
+                                          board.owner?.username
+                                      ).length - 4}
                                     </div>
                                   )}
                                 </div>

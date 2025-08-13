@@ -990,6 +990,7 @@ export default function Canvas({ boardId, svgRef }: CanvasProps) {
     // 🖐️ Move Tool
     if (activeTool === "move") {
       const clickedShape = shapes.find((shape) => {
+        const tolerance = 10;
         if (shape.type === "rectangle") {
           return (
             x >= shape.x &&
@@ -1002,17 +1003,21 @@ export default function Canvas({ boardId, svgRef }: CanvasProps) {
           const dy = y - shape.cy;
           return Math.sqrt(dx * dx + dy * dy) <= shape.r;
         } else if (shape.type === "text") {
+          // Bounding box untuk text
           return (
             x >= shape.x &&
-            x <= shape.x + 100 &&
-            y >= shape.y - 20 &&
+            x <= shape.x + 100 && // Asumsi lebar text max 100
+            y >= shape.y - 20 && // Asumsi tinggi text max 20
             y <= shape.y
           );
         } else if (shape.type === "pen") {
+          // Cek klik di sekitar titik-titik pen
           return shape.points?.some(
-            (point) => Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2) < 10
+            (point) =>
+              Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2) < tolerance
           );
         } else if (isAnyArrowShape(shape)) {
+          // Bounding box untuk panah
           const arrowX1 = shape.x;
           const arrowY1 = shape.y;
           const arrowX2 = shape.x + shape.width;
@@ -1023,8 +1028,6 @@ export default function Canvas({ boardId, svgRef }: CanvasProps) {
           const minArrowY = Math.min(arrowY1, arrowY2);
           const maxArrowY = Math.max(arrowY1, arrowY2);
 
-          // Tambahkan toleransi kecil untuk klik
-          const tolerance = 10;
           return (
             x >= minArrowX - tolerance &&
             x <= maxArrowX + tolerance &&
@@ -1046,6 +1049,7 @@ export default function Canvas({ boardId, svgRef }: CanvasProps) {
           setIsDragging(true);
         }
         setSelectedShapeId(clickedShape.id);
+        setDraggingShapeId(clickedShape.id); // ✅ Tambahkan ini
         setStartPoint({ x, y });
       } else {
         setSelectionRect({ x, y, width: 0, height: 0 });
@@ -1266,8 +1270,7 @@ export default function Canvas({ boardId, svgRef }: CanvasProps) {
           } else if (shape.type === "text") {
             updated = { ...shape, x: shape.x + dx, y: shape.y + dy };
           } else if (shape.type === "pen") {
-            // Logic move untuk PenShape
-            // Gerakkan setiap titik di dalam array points
+            // ✅ PERBAIKAN: Gerakkan setiap titik di dalam array points
             updated = {
               ...shape,
               points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
@@ -1277,20 +1280,16 @@ export default function Canvas({ boardId, svgRef }: CanvasProps) {
               ),
             } as PenShape; // Cast untuk memastikan tipe benar
           } else if (isAnyArrowShape(shape)) {
-            // Logic move untuk ArrowShape
-            // Gerakkan start dan end point
+            // ✅ PERBAIKAN: Gerakkan start point dan perbarui pathData
             updated = {
               ...shape,
               x: shape.x + dx,
               y: shape.y + dy,
-              width: shape.width, // Biarkan width/height tetap relatif terhadap start baru
-              height: shape.height,
-              // Perbarui pathData berdasarkan titik-titik baru relatif
               pathData: getArrowPathData(
                 shape.x + dx,
                 shape.y + dy,
-                shape.x + shape.width + dx, // End X baru
-                shape.y + shape.height + dy, // End Y baru
+                shape.x + shape.width + dx,
+                shape.y + shape.height + dy,
                 shape.type
               ),
             } as ArrowStraightShape | ArrowElbowShape | ArrowCurveShape;
